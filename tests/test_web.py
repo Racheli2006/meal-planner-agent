@@ -249,6 +249,7 @@ class EdgeCaseTests(WebTestCase):
                                                            {"name": "גבינה לבנה", "quantity": 1}]}))  # not kosher
         self.assertEqual(written({**good, "ingredients": [{"name": "בשר טחון", "quantity": 500}]})["kosher"], "meat")
         self.assertIsNone(written({"name": None}))
+        self.assertIsNone(written({**good, "name": "ארוחה בשרית"}))  # describes a meal, isn't a dish's name
         # Basics are dropped (always at home); a new ingredient with a known unit is kept.
         with_new = written({**good, "ingredients": [{"name": "שמן", "quantity": 20},
                                                     {"name": "חצילים", "quantity": 2, "unit": "יחידה"}]})
@@ -428,6 +429,81 @@ class NamedDishTests(WebTestCase):
         with self.ai([reply(calls=[tool_call("report_no_change", {"reason": "הכול בסדר"})])]):
             answer = self.ask({"kind": "other"})
         self.assertIn("הכול בסדר", answer["message"])
+
+
+class MealKindTests(WebTestCase):
+    """'A meat meal on Tuesday': a kind of meal, not a dish's name, so no recipe is made for it."""
+
+    def setUp(self):
+        super().setUp()
+        self.plan()
+
+    def ask(self, intent):
+        with patch.object(agent, "interpret_request", lambda *a, **k: intent):
+            return web.do_change({"request": "..."})
+
+    def test_the_program_picks_a_meal_of_that_kind(self):
+        recipes_before = len(tools.load_recipes()["recipes"])
+        answer = self.ask({"kind": "meal_kind", "meal_kind": "meat", "day": "שלישי", "meal": "lunch"})
+        self.assertIn("ארוחה בשרית", answer["message"])
+        entry = tools.load_json(tools.PLAN_FILE)["plan"]["שלישי"]["lunch"]
+        kosher = {r["id"]: r["kosher"] for r in WEB_RECIPES["recipes"]}
+        self.assertEqual(kosher[entry["main"]], "meat")
+        self.assertTrue(entry["chosen"])
+        self.assertEqual(len(tools.load_recipes()["recipes"]), recipes_before)  # no recipe called "ארוחה בשרית"
+        self.assertEqual(web.state()["to_fix"], [])  # and the dairy dinner after it was moved out of the way
+
+    def test_the_ai_answer_is_read_as_a_kind(self):
+        def understood(answer):
+            client = FakeClient([reply(json.dumps(answer, ensure_ascii=False))])
+            return agent.interpret_request("ארוחה בשרית ביום שלישי", PREFS["plan_days"], "שני", client=client)
+        self.assertEqual(understood({"kind": "meal_kind", "meal_kind": "בשרי", "day": "שלישי", "meal": "צהריים"}),
+                         {"kind": "meal_kind", "meal_kind": "meat", "day": "שלישי", "meal": "lunch", "new": False})
+        self.assertTrue(understood({"kind": "meal_kind", "meal_kind": "dairy", "day": "שלישי", "new": True})["new"])
+        self.assertEqual(understood({"kind": "meal_kind", "meal_kind": "fish", "day": "שלישי"})["kind"], "other")
+
+    def test_one_not_in_the_recipes_offers_a_new_recipe(self):
+        answer = self.ask({"kind": "meal_kind", "meal_kind": "dairy", "day": "שלישי", "meal": "lunch", "new": True})
+        self.assertEqual([c["path"] for c in answer["choices"]], ["/api/put-dish", "/api/meal-kind"])
+        create = answer["choices"][0]["body"]
+        self.assertEqual((create["create"], create["kind"], create["meal"]), (True, "dairy", "lunch"))
+        self.assertEqual(tools.load_json(tools.PLAN_FILE)["plan"]["שלישי"]["lunch"]["main"], 4)  # nothing yet
+
+        # The user picks "new recipe": the AI's recipe goes in under the name it gave it.
+        written = {}
+        def fake_recipe(name, dish_type, recipes, client=None, kosher=None):
+            written.update(asked=name, kosher=kosher)
+            return {"name": "פשטידת גבינות ותרד", "dish_type": "main", "kosher": "dairy", "contains_fish": False,
+                    "meals": ["lunch", "dinner"], "prep_minutes": 40, "servings": 4,
+                    "ingredients": [{"name": "גבינה לבנה", "quantity": 250}], "steps": ["אופים 30 דקות"],
+                    "new_units": {}}
+        with patch.object(agent, "create_recipe", fake_recipe):
+            answer = web.do_put_dish(create)
+        self.assertEqual(written, {"asked": "ארוחה חלבית", "kosher": "dairy"})
+        self.assertIn("הוספתי למתכונים: פשטידת גבינות ותרד", answer["message"])
+        new_id = max(r["id"] for r in tools.load_recipes()["recipes"])
+        self.assertEqual(tools.load_json(tools.PLAN_FILE)["plan"]["שלישי"]["lunch"]["main"], new_id)
+
+    def test_a_new_recipe_of_the_wrong_kind_is_refused(self):
+        client = FakeClient([reply(json.dumps({"name": "קציצות ירק", "steps": ["מטגנים"],
+                                               "ingredients": [{"name": "ביצים", "quantity": 2}]}, ensure_ascii=False))])
+        self.assertIsNone(agent.create_recipe("ארוחה חלבית", "main", WEB_RECIPES, client=client, kosher="dairy"))
+
+    def test_a_meal_that_is_that_kind_already(self):
+        answer = self.ask({"kind": "meal_kind", "meal_kind": "dairy", "day": "שלישי", "meal": "dinner"})
+        self.assertIn("כבר יש ארוחה חלבית", answer["message"])
+
+    def test_no_meal_said_asks_which(self):
+        answer = self.ask({"kind": "meal_kind", "meal_kind": "parve", "day": "שלישי", "meal": None})
+        self.assertIn("לאיזו ארוחה", answer["message"])
+        self.assertEqual([c["path"] for c in answer["choices"]], ["/api/meal-kind"] * 2)
+
+    def test_bad_requests(self):
+        for body in ({"day": "שלישי", "meal": "lunch", "kind": "fish"},
+                     {"day": "שבת", "meal": "lunch", "kind": "meat"},
+                     {"day": "שלישי", "meal": "brunch", "kind": "meat"}):
+            with self.subTest(body=body), self.assertRaises(tools.DataError):
+                web.do_meal_kind(body)
 
 
 class MealNoteTests(WebTestCase):

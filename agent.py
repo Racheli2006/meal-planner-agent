@@ -114,6 +114,8 @@ MEAL_NAMES = {"lunch": "lunch", "dinner": "dinner", "צהריים": "lunch", "ע
 KIND_NAMES = {"meat": "meat", "dairy": "dairy", "parve": "parve", "בשרי": "meat", "חלבי": "dairy", "פרווה": "parve"}
 # Units a new ingredient may have (the same ones the pantry offers).
 NEW_INGREDIENT_UNITS = ("יחידה", "גרם", 'מ"ל', "צרור")
+# A new recipe's name can't start with these: they describe a meal, they don't name a dish.
+GENERIC_NAME_WORDS = ("ארוחה", "ארוחת", "מנה", "משהו", "אוכל")
 
 
 def _names(values, names, everything):
@@ -181,6 +183,10 @@ def interpret_request(request, days, today_name, client=None):
         return {"kind": "other"}
     if answer.get("kind") == "guests" and isinstance(people, int) and not isinstance(people, bool) and people > 0:
         return {"kind": "guests", "day": answer["day"], "meal": meal, "people": people}
+    kind = KIND_NAMES.get(str(answer.get("meal_kind") or "").strip())
+    if answer.get("kind") == "meal_kind" and kind:  # "a meat meal on Wednesday": no dish named
+        return {"kind": "meal_kind", "meal_kind": kind, "day": day, "meal": meal,
+                "new": answer.get("new") is True}  # "one that isn't in the recipe book"
     return {"kind": "other"}
 
 
@@ -208,24 +214,29 @@ def adapt_recipe(name, ingredients, steps, change, client=None):
     return {"steps": new_steps, "added": _words(answer.get("added")), "removed": removed}
 
 
-def create_recipe(name, dish_type, recipes_data, client=None):
+def create_recipe(name, dish_type, recipes_data, client=None, kosher=None):
     """A short AI call for a dish the recipe book doesn't have ("ירקות מאודים"): a simple
     recipe, from the known ingredients where they fit. Everything the AI wrote is checked
     here; what can't be trusted (kosher, fish) is worked out from the ingredients.
     Basics (oil, salt, paprika...) are dropped from the ingredients: they're always at home.
     An ingredient the program doesn't know yet is kept if it has a known unit; it's
     returned in "new_units" ({name: unit}) to be added to the catalog.
+    kosher: the kind of dish asked for ("a new dairy meal"); a recipe of another kind is refused.
     Returns the recipe without an id, or None if it couldn't be made."""
     units = recipes_data["ingredient_units"]
     staples = recipes_data.get("staples", [])
     response = _call_openai(client or make_client(), temperature=0.3, response_format={"type": "json_object"},
-                            messages=recipe_messages(name, dish_type, units, staples))
+                            messages=recipe_messages(name, dish_type, units, staples, kosher,
+                                                     known=[r["name"] for r in recipes_data["recipes"]
+                                                            if kosher and r["kosher"] == kosher]))
     try:
         answer = json.loads(response.choices[0].message.content or "{}")
     except json.JSONDecodeError:
         return None
     if not isinstance(answer, dict) or not str(answer.get("name") or "").strip():
         return None
+    if str(answer["name"]).split()[0] in GENERIC_NAME_WORDS:
+        return None  # "ארוחה בשרית" describes a meal, it isn't a dish's name in a recipe book
     ingredients, new_units = [], {}
     for item in answer.get("ingredients") or []:
         if not isinstance(item, dict) or not str(item.get("name") or "").strip():
@@ -250,7 +261,9 @@ def create_recipe(name, dish_type, recipes_data, client=None):
     dairy = any(w in n for n in names for w in ("גבינ", "חלב", "חמאה", "שמנת", "קוטג", "יוגורט"))
     if meat and dairy:
         return None  # not kosher
-    meals = [m for m in answer.get("meals") or [] if m in ("lunch", "dinner")] or ["lunch", "dinner"]
+    if kosher and kosher != ("meat" if meat else "dairy" if dairy else "parve"):
+        return None  # asked for a dairy meal, and the recipe isn't one
+    meals =[m for m in answer.get("meals") or [] if m in ("lunch", "dinner")] or ["lunch", "dinner"]
     minutes = answer.get("prep_minutes")
     return {"name": str(answer["name"]).strip(),
             "dish_type": dish_type or (answer.get("dish_type") if answer.get("dish_type") in ("main", "side") else "side"),

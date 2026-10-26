@@ -175,6 +175,11 @@ Answer in JSON only, one of:
   {{"kind": "note", "dish": "<the dish on the menu it's about, e.g. שקשוקה>" | null,
   "day": "<day>" | null, "meal": "lunch" | "dinner" | null,
   "note": "<a short instruction in Hebrew, e.g. להוסיף כמון>"}}   (again: null unless said, never guessed)
+- They ask for a KIND of meal but name no dish ("ארוחה בשרית ביום רביעי", "משהו חלבי לערב",
+  "תעשה צהריים פרווה בחמישי"): {{"kind": "meal_kind", "meal_kind": "meat" | "dairy" | "parve",
+  "day": "<day>" | null, "meal": "lunch" | "dinner" | null, "new": true | false}}. "ארוחה בשרית" is NOT a
+  dish's name. "new" is true when they want a dish that ISN'T in the recipe book ("שלא נמצאת במתכונים",
+  "משהו חדש", "מתכון חדש"), false otherwise.
 - Only the number of people changes ("guests on Tuesday evening, we'll be 5"):
   {{"kind": "guests", "day": "<day>", "meal": "lunch" | "dinner" | null, "people": <total number>}}
 - Anything else (a dish they don't want, an allergy, "something lighter", several changes...):
@@ -216,7 +221,9 @@ Basics that are always at home and are NOT listed as ingredients (just mention t
 If the dish needs an ingredient that isn't known, add it with its name in Hebrew (plural, as bought,
 e.g. "חצילים") and a "unit": one of "יחידה", "גרם", "מ\\"ל", "צרור".
 Answer in JSON only:
-{{"name": "<the dish's name in Hebrew>", "dish_type": "main" | "side", "meals": ["lunch", "dinner"],
+{{"name": "<a real dish name in Hebrew, as in a recipe book, e.g. תבשיל בשר טחון ותפוחי אדמה. If the
+  user's words describe a kind of dish rather than name one (e.g. "ארוחה בשרית", "משהו עם עוף"), name the
+  dish you wrote, never with their words>", "dish_type": "main" | "side", "meals": ["lunch", "dinner"],
   "prep_minutes": <number>,
   "ingredients": [{{"name": "<name>", "quantity": <number>, "unit": "<only for an ingredient that isn't known>"}}],
   "steps": ["<short step>", ...]}}
@@ -226,10 +233,15 @@ present: "חותכים את הירקות", "מבשלים 10 דקות" (not "חת
 """
 
 
-def recipe_messages(name, dish_type, units, staples):
-    """The messages for writing a new recipe (see RECIPE_PROMPT)."""
+def recipe_messages(name, dish_type, units, staples, kosher=None, known=()):
+    """The messages for writing a new recipe (see RECIPE_PROMPT). known: the names already
+    in the recipe book, for a new dish of a kind ("a dairy meal we don't have")."""
     listed = ", ".join(f"{n} ({u})" for n, u in units.items())
     hint = f" It's a {dish_type} dish." if dish_type else ""
+    if kosher:  # "a new dairy meal": its ingredients must make it that kind
+        hint += {"meat": " It must be a meat dish (בשרי).", "dairy": " It must be a dairy dish (חלבי, with cheese, "
+                 "milk or cream).", "parve": " It must be parve: no meat and no dairy at all."}[kosher]
+        hint += " Not a dish the recipe book has already: " + ", ".join(known) + "." if known else ""
     return [{"role": "system", "content": RECIPE_PROMPT.format(ingredients=listed, staples=", ".join(staples))},
             {"role": "user", "content": name + hint}]
 

@@ -496,6 +496,26 @@ def replace_meal(planner, day, meal, not_main=None):
     return _change(planner, day, meal, strong=has_wish(planner, day, meal), won=set(), not_main=not_main)
 
 
+def put_meal_of_kind(planner, day, meal, kind):
+    """'A meat meal on Wednesday' (no dish named): the program's best meal of that kind
+    for the slot, as if a family wish asked for it just this once, so every rule is
+    checked the same way. Returns "already" if the meal is that kind now, True if it
+    changed, False if nothing of that kind fits (then nothing changes)."""
+    entry = planner.plan.get(day, {}).get(meal)
+    if entry and planner.meal_kosher_type(tools.meal_dishes(entry)) == kind:
+        return "already"
+    saved = planner.prefs
+    once = {"note": "בקשה חד-פעמית", "days": [day], "meals": [meal], "allowed": [kind]}
+    planner.prefs = {**saved, "slot_rules": saved.get("slot_rules", []) + [once]}
+    try:
+        changed = _change(planner, day, meal, strong=True, won=set())
+    finally:
+        planner.prefs = saved
+    if changed:
+        planner.plan[day][meal]["chosen"] = True  # the user's choice: kept later, not changed for variety
+    return changed
+
+
 def fix_menu(planner, fill_empty=False):
     """Make the meals still to come fit every rule and wish, in code (no AI), so the menu
     always follows the family's wishes. One meal at a time: fixing one can settle another.

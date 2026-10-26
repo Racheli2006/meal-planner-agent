@@ -38,12 +38,6 @@
       "expires": null
     },
     {
-      "name": "בשר טחון",
-      "quantity": 500,
-      "unit": "גרם",
-      "expires": "2027-01-15"
-    },
-    {
       "name": "גבינה לבנה",
       "quantity": 250,
       "unit": "גרם",

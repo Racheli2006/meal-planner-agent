@@ -194,6 +194,15 @@ def do_change(body):
         return put_meal_note(planner, intent)
     if intent["kind"] == "guests" and intent["meal"]:
         return do_guests({"day": intent["day"], "meal": intent["meal"], "people": intent["people"]})
+    if intent["kind"] == "meal_kind":
+        body = {"day": intent["day"], "meal": intent["meal"], "kind": intent["meal_kind"]}
+        if intent.get("new"):
+            return offer_new_recipe(body)
+        if intent["meal"]:
+            return do_meal_kind(body)
+        return {"message": f"לאיזו ארוחה ביום {intent['day']} לשים {MEAL_KINDS[intent['meal_kind']]}?",
+                "choices": [{"label": name, "path": "/api/meal-kind", "body": {**body, "meal": m}}
+                            for m, name in main.MEAL_NAMES.items()]}
 
     before = {(d, m): dict(e) for d, meals in planner.plan.items() for m, e in meals.items()}
     goal = change_goal(request, tools.hebrew_weekday(today()), planner.prefs)
@@ -382,9 +391,12 @@ def do_put_dish(body):
         raise tools.DataError("הבקשה לא תקינה.")
     if body.get("create"):
         recipes = tools.load_recipes()
-        recipe = agent.create_recipe(name, body.get("dish_type"), recipes)
+        kind = body.get("kind") if body.get("kind") in MEAL_KINDS else None  # "a new dairy meal"
+        recipe = agent.create_recipe(name, body.get("dish_type"), recipes, kosher=kind)
         if recipe is None:
             raise tools.DataError(f"לא ניתן ליצור מתכון ל\"{name}\", כי האגנט לא הצליח לכתוב מתכון תקין למנה הזאת.")
+        if recipe["name"] in {r["name"] for r in recipes["recipes"]}:
+            raise tools.DataError(f"לא נוצר מתכון חדש, כי \"{recipe['name']}\" כבר נמצא במתכונים.")
         household.add_recipe(recipe)
         name = recipe["name"]
     planner = main.load_saved_planner(today())  # loaded again: the recipe book may be new
@@ -394,6 +406,50 @@ def do_put_dish(body):
     if body.get("create"):
         answer["message"] = f"הוספתי למתכונים: {name}.\n\n{answer['message']}"
     return answer
+
+
+MEAL_KINDS = {"meat": "ארוחה בשרית", "dairy": "ארוחה חלבית", "parve": "ארוחה פרווה"}
+
+
+def offer_new_recipe(body):
+    """'A dairy meal that isn't in the recipes': the user chooses between a new recipe of
+    that kind (the AI writes it and gives it a real name) and one the recipe book has."""
+    what, day = MEAL_KINDS[body["kind"]], body["day"]
+    meals = [body["meal"]] if body["meal"] else list(main.MEAL_NAMES)
+    def where(m):
+        return f" ל{main.MEAL_NAMES[m]}" if not body["meal"] else ""
+    create = {"dish": what, "day": day, "create": True, "dish_type": "main", "kind": body["kind"]}
+    choices = [{"label": f"ליצור מתכון חדש{where(m)}", "path": "/api/put-dish", "body": {**create, "meal": m}}
+               for m in meals]
+    choices += [{"label": f"{what} מהמתכונים{where(m)}", "path": "/api/meal-kind", "body": {**body, "meal": m}}
+                for m in meals]
+    return {"message": f"אפשר ליצור מתכון חדש של {what} ליום {day}: האגנט יכתוב אותו וייתן לו שם. "
+                       f"או לבחור {what} מהמתכונים שכבר יש.", "choices": choices}
+
+
+def do_meal_kind(body):
+    """'A meat meal on Wednesday': no dish is named, so the program picks the best meal of
+    that kind for the slot (household.put_meal_of_kind), or says why there's none."""
+    day, meal = slot(body)
+    kind = body.get("kind")
+    if kind not in MEAL_KINDS:
+        raise tools.DataError("סוג ארוחה לא מוכר.")
+    planner = main.load_saved_planner(today())
+    if day not in planner.prefs["plan_days"]:
+        raise tools.DataError("יום לא מוכר.")
+    if planner.is_past(day):
+        raise tools.DataError(f"יום {day} כבר עבר, אז אי אפשר לשנות אותו.")
+    what = MEAL_KINDS[kind]
+    before = {(d, m): dict(e) for d, meals in planner.plan.items() for m, e in meals.items()}
+    changed = household.put_meal_of_kind(planner, day, meal, kind)
+    if changed == "already":
+        return {"message": f"ב{main.MEAL_NAMES[meal]} של יום {day} כבר יש {what}."}
+    if not changed:
+        raise tools.DataError(f"לא ניתן לשים {what} ב{main.MEAL_NAMES[meal]} ביום {day}, "
+                              f"כי אין מנה כזו שמתאימה לכל הכללים באותו יום.")
+    main.save_outputs(planner)
+    return with_review(f"שמתי {what} ב{main.MEAL_NAMES[meal]} ביום {day}, כמו שביקשת.\n\n"
+                       f"{main.changes_text(planner, before)}")
 
 
 def slot(body):
@@ -678,7 +734,7 @@ ACTIONS = {
     "/api/pantry": do_pantry, "/api/purchase": do_purchase, "/api/new-week": do_new_week,
     "/api/avoid": do_avoid, "/api/family-notes": do_family_notes, "/api/settings": do_settings,
     "/api/put-dish": do_put_dish, "/api/recipe-note": do_recipe_note, "/api/meal-note": do_meal_note,
-    "/api/rate": do_rate, "/api/remove-extra": do_remove_extra,
+    "/api/rate": do_rate, "/api/remove-extra": do_remove_extra, "/api/meal-kind": do_meal_kind,
 }
 
 
