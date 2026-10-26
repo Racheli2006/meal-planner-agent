@@ -170,6 +170,7 @@ Answer in JSON only, one of:
 
 
 def request_messages(request, days, today_name):
+    """The messages for understanding a change request (see REQUEST_PROMPT)."""
     return [{"role": "system", "content": REQUEST_PROMPT.format(days=", ".join(days), today=today_name)},
             {"role": "user", "content": request}]
 
@@ -187,6 +188,7 @@ Answer in JSON only:
 
 
 def adapt_messages(name, ingredients, steps, change):
+    """The messages for rewriting a recipe with the user's change (see ADAPT_PROMPT)."""
     recipe = (f"{name}\nמצרכים: {', '.join(ingredients)}\nאופן ההכנה:\n"
               + "\n".join(f"{n}. {s}" for n, s in enumerate(steps, 1)))
     return [{"role": "system", "content": ADAPT_PROMPT},
@@ -211,6 +213,7 @@ present: "חותכים את הירקות", "מבשלים 10 דקות" (not "חת
 
 
 def recipe_messages(name, dish_type, units, staples):
+    """The messages for writing a new recipe (see RECIPE_PROMPT)."""
     listed = ", ".join(f"{n} ({u})" for n, u in units.items())
     hint = f" It's a {dish_type} dish." if dish_type else ""
     return [{"role": "system", "content": RECIPE_PROMPT.format(ingredients=listed, staples=", ".join(staples))},
@@ -238,6 +241,7 @@ Answer in JSON only.
 
 
 def wish_messages(note, days):
+    """The messages for understanding a wish (see WISH_PROMPT)."""
     return [{"role": "system", "content": WISH_PROMPT.format(days=", ".join(days))},
             {"role": "user", "content": note}]
 
@@ -254,6 +258,7 @@ def tool_schemas(prefs):
                                  "and shopping limits (their choice); kosher, allergies and wishes still apply."}
 
     def tool(name, description, properties=None, required=None):
+        """One tool's description in the format OpenAI expects."""
         return {
             "type": "function",
             "function": {

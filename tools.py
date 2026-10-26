@@ -64,6 +64,7 @@ def load_json(path):
 
 
 def load_recipes(path=None):
+    """Read the recipe book and check every recipe: valid kinds and meals, known ingredients."""
     path = path or DATA_DIR / "recipes.json"
     data = load_json(path)
     for key in ("ingredient_units", "recipes"):
@@ -244,6 +245,7 @@ class MealPlanner:
     """Holds the data and the plan being built. Each public method is one agent tool."""
 
     def __init__(self, recipes_data, pantry, prefs, today=None):
+        """The week being planned: the recipes, what's free at home, the preferences, and the plan so far."""
         self.units = recipes_data["ingredient_units"]
         self.recipes = {r["id"]: r for r in recipes_data["recipes"]}
         self.prefs = prefs
@@ -302,6 +304,7 @@ class MealPlanner:
                         item["quantity"] = max(0, item["quantity"] - qty)
 
     def day_date(self, day):
+        """The date of a weekday in the planned week."""
         return self.week_start + timedelta(days=WEEKDAYS.index(day))
 
     def is_past(self, day):
@@ -424,6 +427,7 @@ class MealPlanner:
         return None
 
     def _uses_expiring(self, recipe):
+        """The recipe's ingredients that expire soon (so the AI can prefer it)."""
         soon = self.prefs["expiring_soon_days"]
         names = []
         for ing in recipe["ingredients"]:
@@ -579,6 +583,7 @@ class MealPlanner:
     # ----- The plan: helpers -----
 
     def _slot_error(self, day, meal):
+        """Why this day/meal can't be planned (not a planned day or meal, or over), or None."""
         if day not in self.prefs["plan_days"]:
             return f"day must be one of {self.prefs['plan_days']}"
         if meal not in self.prefs["meals"]:
@@ -645,6 +650,7 @@ class MealPlanner:
         return {"ok": True, "hint": "Don't change anything now. Finish with a one-line answer."}
 
     def _people_error(self, people):
+        """Why a number of people isn't valid, or None."""
         # Checked with `is None`, not `or`: people=0 must be an error, not "use the default".
         if people is not None and (isinstance(people, bool) or not isinstance(people, int) or not 1 <= people <= MAX_PEOPLE):
             return f"people must be a whole number from 1 to {MAX_PEOPLE}, got {people}"

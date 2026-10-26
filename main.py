@@ -24,12 +24,14 @@ UNIT_NAMES = {"יחידה": "יח'", "צרור": "צרור"}  # "5 יח'" reads 
 
 
 def amount(quantity, unit):
+    """A quantity with its unit, short ("5 יח'")."""
     return f"{quantity} {UNIT_NAMES.get(unit, unit)}"
 
 
 # ---------- Building the planner from the data files ----------
 
 def load_planner(today):
+    """A fresh planner from the data files (no saved plan)."""
     recipes = tools.load_recipes()
     pantry = tools.load_pantry(recipes["ingredient_units"])
     prefs = tools.load_preferences()
@@ -53,6 +55,7 @@ def load_saved_planner(today):
 # ---------- Text output (printed, and saved to output/menu.txt) ----------
 
 def menu_text(planner):
+    """The week's menu as text."""
     status = planner.get_plan_status()
     lines = [f"תפריט לשבוע שמתחיל ב-{planner.week_start:%d/%m/%Y}", ""]
     for day in planner.prefs["plan_days"]:
@@ -70,12 +73,14 @@ def menu_text(planner):
 
 
 def shopping_text(items, title="רשימת קניות"):
+    """The shopping list as text."""
     if not items:
         return f"{title}: אין צורך לקנות כלום 🎉"
     return "\n".join([f"{title}:"] + [f"   ☐ {i['name']}: {amount(i['quantity'], i['unit'])}" for i in items])
 
 
 def day_text(planner, day):
+    """One day's meals with full recipes, for 'what's cooking today'."""
     meals = planner.describe_day(day)
     if not meals:
         return f"אין ארוחות מתוכננות ליום {day}."
@@ -99,6 +104,7 @@ def changed_slots(planner, before):
     """(day, meal, old, new) for every slot whose dishes or number of people changed.
     A meal taken out and put back the same is not a change, even if its shopping moved."""
     def what(entry):
+        """What counts as the meal: its dishes and number of people."""
         return entry and (entry["main"], entry["side"], entry["people"])
 
     after = {(d, m): e for d, meals in planner.plan.items() for m, e in meals.items()}
@@ -110,6 +116,7 @@ def changed_slots(planner, before):
 def changes_text(planner, before):
     """What really changed in the plan, from the data (not from the AI's summary)."""
     def describe(entry):
+        """One meal in words, for 'before' and 'after'."""
         if entry is None:
             return "ריק"
         side = f" + {planner.recipes[entry['side']]['name']}" if entry["side"] else ""
@@ -156,6 +163,7 @@ def save_outputs(planner):
 
 
 def menu_file():
+    """Where the readable copy of the menu is saved."""
     return tools.PLAN_FILE.parent / "menu.txt"
 
 
@@ -182,6 +190,7 @@ def saved_plan_this_week(recipes, today):
 
 
 def plan_week(today):
+    """Plan the week with the agent and print the menu, the shopping list and its summary."""
     recipes = tools.load_recipes()
     if tools.PLAN_FILE.exists():
         last = tools.load_plan(recipes)
@@ -216,6 +225,7 @@ def plan_week(today):
 
 
 def show_today(today):
+    """Print today's meals and recipes (no AI)."""
     day = tools.hebrew_weekday(today)
     prefs = tools.load_preferences()
     if day not in prefs["plan_days"]:
@@ -226,6 +236,7 @@ def show_today(today):
 
 
 def change_day(today, request):
+    """Change the saved plan from a request in the user's words, with the agent."""
     planner = load_saved_planner(today)
     if not request:
         request = input("מה לשנות? (למשל: ביום שלישי בצהריים יהיו 5 אנשים)\n> ").strip()
@@ -268,6 +279,7 @@ def change_day(today, request):
 # ---------- Entry point ----------
 
 def choose_from_menu():
+    """Ask what to do when no command was given."""
     print("מה תרצי לעשות?")
     print("  1. לתכנן שבוע חדש")
     print("  2. מה מבשלים היום?")
@@ -280,6 +292,7 @@ def choose_from_menu():
 
 
 def main(argv=None):
+    """The command line: plan / today / change (or a menu)."""
     # Hebrew and emoji must print even when the output is redirected to a file.
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")

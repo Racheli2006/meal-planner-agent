@@ -40,6 +40,7 @@ PINNED_TOOLS = {"get_pantry"}
 
 
 def estimate_cost(input_tokens, output_tokens):
+    """Dollars for this many tokens, at the list prices above."""
     return (input_tokens * PRICE_PER_M_INPUT + output_tokens * PRICE_PER_M_OUTPUT) / 1_000_000
 
 
@@ -126,6 +127,7 @@ def _names(values, names, everything):
 
 
 def _words(values):
+    """The AI's words as a clean list: trimmed, no empties, no repeats."""
     values = values if isinstance(values, list) else [values] if values else []
     return list(dict.fromkeys(str(w).strip() for w in values if str(w).strip()))
 
@@ -361,6 +363,7 @@ def run_agent(planner, goal, client=None, require_done=False, log=print):
     input_tokens = output_tokens = 0
 
     def outcome(finished, summary, step, reason):
+        """The run's result, with what it cost so far."""
         return {"finished": finished, "summary": summary, "steps": step,
                 "tokens": input_tokens + output_tokens,
                 "cost": estimate_cost(input_tokens, output_tokens), "reason": reason}

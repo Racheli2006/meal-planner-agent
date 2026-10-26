@@ -21,6 +21,7 @@ import tools
 
 
 def pantry_file():
+    """Where the pantry is kept (looked up each time, so tests can point it elsewhere)."""
     return tools.DATA_DIR / "pantry.json"
 
 
@@ -222,6 +223,7 @@ def slots_to_fix(planner, keep=()):
     hard = set()    # slots that break a fixed rule (kosher across the day, repeats)
 
     def flag(day, meal, reason, kind):
+        """Mark a meal still to come as needing a change, with the reason."""
         if not planner.is_past(day):
             found.setdefault((day, meal), []).append(reason)
             kind.add((day, meal))
@@ -366,6 +368,7 @@ def _refill(planner, day, meal, people, not_main=None, strong=False):
 
 
 def _people(planner, day, meal):
+    """How many people a slot is for: its meal's number, or the household's."""
     entry = planner.plan.get(day, {}).get(meal)
     return entry["people"] if entry else planner.prefs["people"]
 
@@ -451,6 +454,7 @@ WHY_NOT = [("already over", "היום הזה כבר עבר"),
 
 
 def why_not(error):
+    """A tool's refusal (English, for the AI) in words for the user."""
     return next((hebrew for key, hebrew in WHY_NOT if key in error), "המנה לא מתאימה לכללים של הארוחה")
 
 

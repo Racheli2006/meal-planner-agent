@@ -178,10 +178,12 @@ let choices = [];          // [{label, path, body}] offered by the last message
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const amount = (q, u) => `${q} ${UNIT_SHORT[u] || u}`;
+// An empty row for the pantry tables.
 function blankRow() { return { name: "", quantity: "", unit: "", expires: "" }; }
 
 // ---------- Talking to the server ----------
 
+// Every action goes through here: POST to the server, show its message, redraw from its state.
 async function call(path, body, busyText) {
   busy = true;
   if (busyText) { $("busy-text").textContent = busyText; $("busy").hidden = false; }
@@ -220,6 +222,7 @@ document.addEventListener("toggle", e => {
 // Alphabetical, the Hebrew way (final letters like ם sort with מ).
 const byName = (a, b) => a.name.localeCompare(b.name, "he");
 
+// New data from the server: keep it, refresh the pantry table, and redraw.
 function setState(state) {
   S = state;
   S.shopping.sort(byName);
@@ -257,6 +260,7 @@ function mergePantry(rows, base, fresh) {
   return merged;
 }
 
+// The message box at the top: the server's answer, its buttons (choices), and the agent's steps.
 function showMessage(m) {
   const box = $("message");
   box.className = "message" + (m.error ? " error" : "");
@@ -277,6 +281,7 @@ function showMessage(m) {
 
 // ---------- Rendering ----------
 
+// Draw the tab that's open, from S (the state). Typed text survives the redraw.
 function render() {
   $("subtitle").textContent = `היום יום ${S.today_name}, ${S.today.split("-").reverse().join("/")} · שבוע שמתחיל ב-${S.week_start}`;
   const n = S.shopping.length;
@@ -294,6 +299,7 @@ function render() {
   for (const [id, value] of Object.entries(typed)) if ($(id)) $(id).value = value;
 }
 
+// The 'important updates' panel: the household, foods never eaten, and standing wishes.
 function importantView() {
   const chips = (list, action) => list.map((a, i) => `<span class="chip ${action === "avoid-remove" ? "bad" : "note-chip"}">${esc(a)}
     <button class="close-chip" data-action="${action}" data-i="${i}" aria-label="הסרה של ${esc(a)}">×</button></span>`).join("");
@@ -343,6 +349,7 @@ function importantView() {
   </details>`;
 }
 
+// The 'week' tab: the request box, the important updates, and a card per day.
 function weekView() {
   if (S.mode === "no_plan") {
     return `<div class="stack">${importantView()}<div class="panel stack">
@@ -376,6 +383,7 @@ function weekView() {
   </div>`;
 }
 
+// One meal in a day card: its dishes (click for the recipe), labels, and its buttons.
 function mealView(d, m) {
   const key = `${d.name}:${m.meal}`;
   const attrs = `data-day="${esc(d.name)}" data-meal="${m.meal}"`;
@@ -425,12 +433,14 @@ function mealView(d, m) {
   </div>`;
 }
 
+// A known ingredient shows its unit; a new one gets a unit to choose.
 function unitCell(row, i, list) {
   if (S.units[row.name]) return `<span class="unit-fixed">${esc(S.units[row.name])}</span>`;
   return `<select data-list="${list}" data-i="${i}" data-field="unit" aria-label="יחידה">
     <option value="">יחידה…</option>${S.unit_choices.map(u => `<option ${u === row.unit ? "selected" : ""}>${esc(u)}</option>`).join("")}</select>`;
 }
 
+// An editable table of items: used for the pantry, a new purchase, and a new week.
 function pantryTable(list, rows, withFree) {
   const today = S.today;
   return `<div class="table-wrap"><table>
@@ -453,6 +463,7 @@ function pantryTable(list, rows, withFree) {
 // The ingredient names suggested while typing (once per view: ids must be unique).
 const datalist = () => `<datalist id="ingredients">${Object.keys(S.units).map(n => `<option value="${esc(n)}">`).join("")}</datalist>`;
 
+// The 'pantry' tab: a new purchase, and everything at home.
 function pantryView() {
   const notes = [];
   if (S.notes.expired?.length) notes.push(`<span class="chip bad">פג תוקף: ${esc(S.notes.expired.join(", "))}</span>`);
@@ -477,6 +488,7 @@ function pantryView() {
   </div>`;
 }
 
+// The 'shopping' tab: what to buy, ticked off as it's bought.
 function shopView() {
   if (S.mode !== "week") return `<div class="panel"><p class="note">רשימת הקניות תופיע אחרי שהאגנט יתכנן את השבוע.</p></div>`;
   if (!S.shopping.length) return `<div class="panel"><h2>רשימת קניות</h2><p class="note">אין מה לקנות. כל מה שהתפריט צריך כבר בבית.</p></div>`;
@@ -496,6 +508,7 @@ function shopView() {
 // The list as plain text, to paste in WhatsApp or a note.
 const shoppingText = () => ["רשימת קניות:", ...S.shopping.map(s => `• ${s.name} ${amount(s.quantity, s.unit)}`)].join("\n");
 
+// A new week: what should be left from last week, to check before planning.
 function newWeekView() {
   return `${datalist()}<div class="panel stack">
     <div><h2>פתיחת שבוע חדש</h2>
@@ -509,8 +522,10 @@ function newWeekView() {
 
 // ---------- Reading the forms ----------
 
+// Which table a row belongs to.
 function rowsFor(list) { return list === "purchase" ? purchase : draft; }
 
+// The table's rows as items for the server (empty rows left out).
 function toItems(rows) {
   return rows.filter(r => String(r.name).trim()).map(r => ({
     name: String(r.name).trim(),
@@ -520,6 +535,7 @@ function toItems(rows) {
   }));
 }
 
+// Typing in a table: remember it (and that there are unsaved edits).
 document.addEventListener("input", e => {
   const { list, i, field } = e.target.dataset;
   if (!list) return;
@@ -532,6 +548,7 @@ document.addEventListener("input", e => {
 
 // ---------- Buttons ----------
 
+// What each button does (its data-action).
 const ACTIONS = {
   "close-message": () => { $("message").hidden = true; },
   "open": el => { openForm = el.dataset.form; render(); },
@@ -635,6 +652,7 @@ const ACTIONS = {
 // A new wish is first understood by the AI, which takes a few seconds.
 const checking = action => S.mode === "week" ? `${action} ומתאים את התפריט…` : `${action}…`;
 
+// Save the edited pantry (or the new week's), keeping the edits if saving fails.
 async function saveDraft(path) {
   const wasDirty = draftDirty;
   draftDirty = false;   // so the state that comes back refreshes the table
@@ -643,6 +661,7 @@ async function saveDraft(path) {
   return result;
 }
 
+// One listener for every button: tabs, and the ACTIONS above.
 document.addEventListener("click", e => {
   const tabBtn = e.target.closest("[data-tab]");
   if (tabBtn) { tab = tabBtn.dataset.tab; render(); return; }

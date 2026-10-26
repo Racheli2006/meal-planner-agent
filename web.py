@@ -31,12 +31,14 @@ TODAY = None             # set by --date; None means the real date
 
 
 def today():
+    """The app's date: the real one, or the one given with --date."""
     return TODAY or date.today()
 
 
 # ---------- What the page shows ----------
 
 def meal_view(planner, day, meal):
+    """One meal as the page shows it: dishes, kind, people, what's left to buy, and the recipes."""
     entry = planner.plan.get(day, {}).get(meal)
     view = {"meal": meal, "label": main.MEAL_NAMES[meal]}
     if entry is None:
@@ -137,6 +139,7 @@ def state():
 # ---------- Actions ----------
 
 def run_ai(planner, goal, require_done=False):
+    """Run the agent on a goal, save what it did, and keep its steps for the page."""
     log = []
     result = agent.run_agent(planner, goal, require_done=require_done, log=log.append)
     main.save_outputs(planner)
@@ -144,6 +147,7 @@ def run_ai(planner, goal, require_done=False):
 
 
 def ai_answer(result, log, message=None):
+    """The agent's run as a message for the page: what changed, its summary, and its steps."""
     lines = [message] if message else []
     if result["summary"]:
         lines.append(result["summary"])
@@ -153,6 +157,7 @@ def ai_answer(result, log, message=None):
 
 
 def do_plan(body):
+    """Plan the week with the agent; the days that are over keep their meals."""
     recipes, planner = main.load_planner(today())
     saved = main.saved_plan_this_week(recipes, today())
     if saved:
@@ -318,6 +323,7 @@ def do_meal_note(body):
 
 
 def do_recipe_note(body):
+    """Keep a change in the recipe book for next times (the button after a meal note)."""
     recipe_id, note = body.get("recipe"), str(body.get("note") or "").strip()
     if not isinstance(recipe_id, int) or not note:
         raise tools.DataError("הבקשה לא תקינה.")
@@ -355,6 +361,7 @@ def do_put_dish(body):
 
 
 def slot(body):
+    """The day and meal a request is about (checked)."""
     day, meal = body.get("day"), body.get("meal")
     if meal not in main.MEAL_NAMES:
         raise tools.DataError("ארוחה לא מוכרת.")
@@ -394,6 +401,7 @@ def do_replace(body):
 
 
 def do_guests(body):
+    """A different number of people for one meal, without the AI."""
     day, meal = slot(body)
     people = body.get("people")
     if isinstance(people, bool) or not isinstance(people, int) or not 1 <= people <= tools.MAX_PEOPLE:
@@ -415,6 +423,7 @@ def do_guests(body):
 
 
 def do_skip(body):
+    """'Not cooked': the meal comes out and its ingredients are free again."""
     day, meal = slot(body)
     planner = main.load_saved_planner(today())
     household.skip_meal(planner, day, meal)
@@ -423,6 +432,7 @@ def do_skip(body):
 
 
 def do_bought(body):
+    """Items on the shopping list were bought: they move into the pantry."""
     names = body.get("names")  # None: the whole list
     planner = main.load_saved_planner(today())
     bought = household.record_shopping(planner, set(names) if names is not None else None)
@@ -431,6 +441,7 @@ def do_bought(body):
 
 
 def units():
+    """Each known ingredient's unit (grams, units...)."""
     return tools.load_recipes()["ingredient_units"]
 
 
@@ -448,6 +459,7 @@ def match_plan_to_pantry():
 
 
 def stuck_text(stuck):
+    """Lines for the meals that nothing fits, with the reasons."""
     return "".join(f"\n\n⚠️ יום {s['day']} {main.MEAL_NAMES[s['meal']]}: {'; '.join(s['reasons'])}. "
                    f"אין במתכונים אף מנה שמתאימה לכל הכללים, אז השארתי אותה כמו שהיא." for s in stuck)
 
@@ -469,11 +481,13 @@ def with_review(message):
 
 
 def do_pantry(body):
+    """Save the pantry the user edited, then fit the shopping list and the menu to it."""
     household.write_pantry(body.get("items") or [], units(), today())
     return with_review("המלאי נשמר." + match_plan_to_pantry())
 
 
 def do_purchase(body):
+    """Add a new purchase to the pantry, then fit the menu to it."""
     plan = tools.load_plan(tools.load_recipes())["plan"] if tools.PLAN_FILE.exists() else {}
     household.add_to_pantry(body.get("items") or [], units(), today(), used=household.reserved_in_plan(plan))
     return with_review("הקנייה נוספה למלאי." + match_plan_to_pantry())
@@ -497,6 +511,7 @@ def save_preferences(**changes):
 
 
 def texts(values):
+    """The user's list of texts, trimmed, without empties or repeats."""
     return list(dict.fromkeys(str(v).strip() for v in values or [] if str(v).strip()))  # no duplicates
 
 
@@ -577,6 +592,7 @@ def do_settings(body):
 
 
 def do_new_week(body):
+    """Start a new week from the pantry the user confirmed; last week's plan is archived."""
     household.start_new_week(body.get("items") or [], units(), today())
     return {"message": "המלאי לשבוע החדש נשמר. עכשיו אפשר לתכנן את השבוע."}
 
@@ -593,7 +609,9 @@ ACTIONS = {
 # ---------- The web server ----------
 
 class Handler(BaseHTTPRequestHandler):
+    """The web server: the page itself, the state, and one POST route per action (ACTIONS)."""
     def send(self, status, body, content_type="application/json; charset=utf-8"):
+        """Answer with JSON (or the page's HTML)."""
         data = body if isinstance(body, bytes) else json.dumps(body, ensure_ascii=False, default=str).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", content_type)
@@ -615,6 +633,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send(500, {"error": f"שגיאה פנימית: {type(e).__name__}: {e}"})
 
     def do_GET(self):
+        """The page, or the current state."""
         if self.path in ("/", "/index.html"):
             self.send(200, PAGE.read_bytes(), "text/html; charset=utf-8")
         elif self.path == "/api/state":
@@ -623,6 +642,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send(404, {"error": "not found"})
 
     def do_POST(self):
+        """An action: read its JSON body and run it (see ACTIONS)."""
         # The body is read first, always: answering before it's read can make the
         # browser's connection drop (seen on Windows).
         try:
@@ -640,10 +660,12 @@ class Handler(BaseHTTPRequestHandler):
         self.answer(lambda: action(body if isinstance(body, dict) else {}))
 
     def log_message(self, format, *args):
+        """Keep the terminal quiet; the agent's steps are shown on the page."""
         pass  # keep the terminal quiet; the AI's steps are shown on the page
 
 
 def run(argv=None):
+    """Start the server (and the browser), until Ctrl+C."""
     global TODAY
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
