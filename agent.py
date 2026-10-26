@@ -114,6 +114,8 @@ MEAL_NAMES = {"lunch": "lunch", "dinner": "dinner", "צהריים": "lunch", "ע
 KIND_NAMES = {"meat": "meat", "dairy": "dairy", "parve": "parve", "בשרי": "meat", "חלבי": "dairy", "פרווה": "parve"}
 # Units a new ingredient may have (the same ones the pantry offers).
 NEW_INGREDIENT_UNITS = ("יחידה", "גרם", 'מ"ל', "צרור")
+# Words that say a meal in a request ("בצהריים", "צהרים", "בערב", "ארוחת ערב", "בלילה").
+MEAL_WORDS = {"lunch": ("צהר",), "dinner": ("ערב", "לילה")}
 # A new recipe's name can't start with these: they describe a meal, they don't name a dish.
 GENERIC_NAME_WORDS = ("ארוחה", "ארוחת", "מנה", "משהו", "אוכל")
 
@@ -167,6 +169,8 @@ def interpret_request(request, days, today_name, client=None):
         return {"kind": "other"}
     day = answer.get("day") if answer.get("day") in days else None
     meal = MEAL_NAMES.get(str(answer.get("meal") or "").strip())
+    if meal and not any(w in request for w in MEAL_WORDS[meal]):
+        meal = None  # the AI guessed a meal the user didn't say: then the user is asked
     with_dish = str(answer.get("with_dish") or "").strip() or None
     instead_of = str(answer.get("instead_of") or "").strip() or None
     if answer.get("kind") == "dish" and str(answer.get("dish") or "").strip() and (day or with_dish or instead_of):

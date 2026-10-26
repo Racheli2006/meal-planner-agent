@@ -257,6 +257,15 @@ def put_named_dish(planner, intent):
                     "choices": [{"label": n, "path": "/api/put-dish", "body": {**target, "dish": n}} for n in fits]}
         if fits:
             name = fits[0]
+    if meal is None:  # "schnitzel on Wednesday": which meal is the user's to say, not guessed
+        found = household.find_dish(planner, name)
+        there = any(found["id"] in tools.meal_dishes(e) for e in planner.plan.get(day, {}).values())
+        fits = [m for m in planner.prefs["meals"] if m in found["meals"]]
+        if len(fits) > 1 and not there:
+            return {"message": f"לאיזו ארוחה ביום {day} לשים {found['name']}?",
+                    "choices": [{"label": main.MEAL_NAMES[m], "path": "/api/put-dish",
+                                 "body": {"dish": found["name"], "day": day, "meal": m, "role": role, "add": add}}
+                                for m in fits]}
     if add:
         return add_named_dish(planner, day, meal, name, before)
     ok, meal, found = household.put_dish(planner, day, meal, name, role)

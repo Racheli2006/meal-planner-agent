@@ -358,9 +358,13 @@ class NamedDishTests(WebTestCase):
             self.ask({"kind": "dish", "dish": "סלט עגבניות", "day": "שלישי", "meal": "lunch"})
         self.assertIn("כבר יש סלט עגבניות", str(e.exception))
 
-    def test_no_meal_named_tries_the_day(self):
+    def test_no_meal_named_asks_which(self):
         answer = self.ask({"kind": "dish", "dish": "חביתה", "day": "שלישי", "meal": None})
-        self.assertIn(5, self.menu().values())
+        self.assertIn("לאיזו ארוחה", answer["message"])
+        self.assertNotIn(5, self.menu().values())  # nothing guessed
+        dinner = next(c for c in answer["choices"] if c["body"]["meal"] == "dinner")
+        answer = web.do_put_dish(dinner["body"])
+        self.assertEqual(tools.load_json(tools.PLAN_FILE)["plan"]["שלישי"]["dinner"]["main"], 5)
         self.assertIn("חביתה", answer["message"])
 
     def test_dish_that_cant_go_there_says_why(self):
@@ -454,9 +458,14 @@ class MealKindTests(WebTestCase):
         self.assertEqual(web.state()["to_fix"], [])  # and the dairy dinner after it was moved out of the way
 
     def test_the_ai_answer_is_read_as_a_kind(self):
-        def understood(answer):
+        def understood(answer, request="ארוחה בשרית ביום שלישי בצהריים"):
             client = FakeClient([reply(json.dumps(answer, ensure_ascii=False))])
-            return agent.interpret_request("ארוחה בשרית ביום שלישי", PREFS["plan_days"], "שני", client=client)
+            return agent.interpret_request(request, PREFS["plan_days"], "שני", client=client)
+        # A meal the request doesn't say is the AI's guess: dropped, so the user is asked.
+        guessed = understood({"kind": "dish", "dish": "שניצל", "day": "שלישי", "meal": "dinner"}, "שניצל ביום שלישי")
+        self.assertIsNone(guessed["meal"])
+        said = understood({"kind": "dish", "dish": "שניצל", "day": "שלישי", "meal": "dinner"}, "שניצל בשלישי בערב")
+        self.assertEqual(said["meal"], "dinner")
         self.assertEqual(understood({"kind": "meal_kind", "meal_kind": "בשרי", "day": "שלישי", "meal": "צהריים"}),
                          {"kind": "meal_kind", "meal_kind": "meat", "day": "שלישי", "meal": "lunch", "new": False})
         self.assertTrue(understood({"kind": "meal_kind", "meal_kind": "dairy", "day": "שלישי", "new": True})["new"])
