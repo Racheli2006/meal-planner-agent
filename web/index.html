@@ -1,0 +1,656 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>מתכנן הארוחות</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@500;700&family=Assistant:wght@400;600;700&display=swap">
+<style>
+/* Layout: a fridge sheet for the week. Day cards on the left, tabs for the pantry and the shopping list. */
+:root {
+  --bg: #f6f7f3; --card: #ffffff; --fg: #1f2a24; --muted: #66726b; --line: #dfe4dc; --soft: #eef1ec;
+  --accent: #3d6b4f; --accent-fg: #ffffff;
+  --meat: #a8452f; --meat-bg: #f7e6e1;
+  --dairy: #2f6496; --dairy-bg: #e2ecf6;
+  --parve: #4f7a3a; --parve-bg: #e6f0df;
+  --warn: #9a5b00; --warn-bg: #fbf0dc; --bad: #a83232; --bad-bg: #f8e3e3;
+  --display: "Frank Ruhl Libre", "David", Georgia, serif;
+  --body: "Assistant", "Segoe UI", Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --bg: #151a17; --card: #1e2520; --fg: #e8ede9; --muted: #9aa69f; --line: #2f3933; --soft: #252d28;
+  --accent: #8cc5a0; --accent-fg: #102016;
+  --meat: #f0a08c; --meat-bg: #3a2420; --dairy: #9cc4ec; --dairy-bg: #1f2e3d; --parve: #a8d48f; --parve-bg: #24331f;
+  --warn: #f0c070; --warn-bg: #3a2e18; --bad: #f09a9a; --bad-bg: #3d2222;
+  color-scheme: dark } }
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 16px; line-height: 1.5; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 24px 16px 64px; }
+header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px 24px; margin-bottom: 18px; }
+h1 { font-family: var(--display); font-weight: 700; font-size: clamp(1.8rem, 4vw, 2.4rem); margin: 0; }
+h2 { font-family: var(--display); font-size: 1.3rem; margin: 0 0 10px; }
+.sub { color: var(--muted); margin: 2px 0 0; }
+
+nav { display: flex; gap: 4px; background: var(--soft); padding: 4px; border-radius: 10px; }
+nav button { border: 0; background: transparent; color: var(--fg); font: inherit; font-weight: 600; padding: 6px 14px; border-radius: 7px; cursor: pointer; }
+nav button[aria-selected="true"] { background: var(--card); box-shadow: 0 1px 2px rgb(0 0 0 / .12); }
+.badge { display: inline-block; min-width: 1.4em; padding: 0 5px; margin-inline-start: 4px; border-radius: 999px; background: var(--accent); color: var(--accent-fg); font-size: .75rem; text-align: center; }
+
+button.btn { font: inherit; font-weight: 600; border: 1px solid var(--line); background: var(--card); color: var(--fg); padding: 6px 14px; border-radius: 8px; cursor: pointer; }
+button.btn:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+button.small { padding: 3px 10px; font-size: .85rem; }
+button.danger { color: var(--bad); }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+input, select, textarea { font: inherit; color: var(--fg); background: var(--card); border: 1px solid var(--line); border-radius: 7px; padding: 5px 8px; }
+textarea { width: 100%; resize: vertical; min-height: 2.6em; }
+
+.panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+.stack { display: flex; flex-direction: column; gap: 16px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.muted { color: var(--muted); }
+.note { color: var(--muted); font-size: .92rem; margin: 0 0 12px; }
+
+.message { border-radius: 12px; padding: 12px 16px; background: var(--parve-bg); border: 1px solid var(--line); white-space: pre-line; position: relative; }
+.message.error { background: var(--bad-bg); color: var(--bad); }
+.message .close { position: absolute; inset-inline-end: 8px; top: 6px; border: 0; background: none; color: inherit; font-size: 1.2rem; cursor: pointer; }
+.message details { margin-top: 8px; font-size: .85rem; color: var(--muted); }
+.message pre { white-space: pre-wrap; direction: ltr; text-align: left; font-size: .78rem; max-height: 260px; overflow: auto; background: var(--soft); padding: 8px; border-radius: 6px; }
+
+.pill { display: inline-block; font-size: .78rem; font-weight: 700; padding: 1px 10px; border-radius: 999px; }
+.meat { color: var(--meat); background: var(--meat-bg); }
+.dairy { color: var(--dairy); background: var(--dairy-bg); }
+.parve { color: var(--parve); background: var(--parve-bg); }
+
+.days { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+.day { background: var(--card); border: 1px solid var(--line); border-radius: 12px; display: flex; flex-direction: column; min-width: 0; }
+.day.today { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); }
+.day.past { opacity: .72; }
+.day-head { display: flex; justify-content: space-between; align-items: baseline; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.day-name { font-family: var(--display); font-weight: 700; font-size: 1.2rem; }
+.tag { font-size: .72rem; font-weight: 700; color: var(--accent); margin-inline-start: 6px; }
+.day-date { color: var(--muted); font-size: .85rem; font-variant-numeric: tabular-nums; }
+.meal { padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; flex: 1; }
+.meal + .meal { border-top: 1px dashed var(--line); }
+.meal-label { font-size: .75rem; font-weight: 700; color: var(--muted); letter-spacing: .06em; display: flex; justify-content: space-between; }
+.main-dish { font-weight: 700; font-size: 1.05rem; line-height: 1.3; }
+.side-dish { color: var(--muted); font-size: .92rem; }
+.dish-link { border: 0; background: none; padding: 0; font-family: inherit; text-align: start; cursor: pointer; color: inherit; }
+.dish-link.main-dish { color: var(--fg); }
+.dish-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.recipe-toggle { border: 0; background: none; padding: 0; font: inherit; font-size: .85rem; color: var(--accent); cursor: pointer; align-self: start; }
+.recipes { display: flex; flex-direction: column; gap: 12px; margin-top: 4px; padding: 10px 12px; background: var(--soft); border-radius: 8px; font-size: .92rem; }
+.recipe h4 { margin: 0 0 4px; font-size: 1rem; }
+.recipe ul, .recipe ol { margin: 2px 0 8px; padding-inline-start: 22px; }
+.recipe li { margin-bottom: 2px; }
+.recipe-label { font-size: .75rem; font-weight: 700; color: var(--muted); letter-spacing: .04em; }
+.recipe .note { margin: 0; font-size: .82rem; }
+.meal-note { font-size: .85rem; color: var(--accent); margin: 0; }
+.recipe li.removed { text-decoration: line-through; color: var(--muted); }
+.chip.added { background: var(--parve-bg); color: var(--parve); }
+.to-buy { font-size: .82rem; color: var(--warn); }
+.actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.inline-form { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; padding: 8px; background: var(--soft); border-radius: 8px; font-size: .9rem; }
+.inline-form input[type=number] { width: 4.5em; }
+
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th { text-align: start; font-size: .78rem; color: var(--muted); font-weight: 700; padding: 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 5px 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+td input.name { width: 100%; min-width: 9em; }
+td input.qty { width: 6em; font-variant-numeric: tabular-nums; }
+td .unit-fixed { color: var(--muted); white-space: nowrap; }
+tr.expired td { background: var(--bad-bg); }
+.free { font-size: .82rem; color: var(--muted); white-space: nowrap; }
+.chip { display: inline-block; font-size: .8rem; padding: 1px 8px; border-radius: 999px; background: var(--warn-bg); color: var(--warn); }
+.chip.bad { background: var(--bad-bg); color: var(--bad); }
+.check { display: inline-flex; gap: 4px; align-items: center; font-size: .92rem; cursor: pointer; }
+.check input { accent-color: var(--accent); }
+#list-text { margin-top: 10px; font-family: inherit; }
+.chip.note-chip { background: var(--soft); color: var(--fg); }
+.important summary { cursor: pointer; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; list-style: none; }
+.important summary::-webkit-details-marker { display: none; }
+.important summary h2 { margin: 0; }
+.important summary h2::before { content: "▸ "; color: var(--muted); }
+.important[open] summary h2::before { content: "▾ "; }
+.important[open] summary { margin-bottom: 12px; }
+.important-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px 28px; }
+.wish { background: var(--soft); border-radius: 8px; padding: 8px 10px; }
+.understood { font-size: .82rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 2px; }
+.important h3 { font-size: 1rem; margin: 0 0 4px; }
+.close-chip { border: 0; background: none; color: inherit; font: inherit; font-weight: 700; cursor: pointer; padding: 0 2px; }
+
+.shop { list-style: none; margin: 0; padding: 0; }
+.shop li { border-bottom: 1px solid var(--line); }
+.shop label { display: flex; gap: 10px; align-items: center; padding: 9px 2px; cursor: pointer; }
+.shop input { width: 18px; height: 18px; accent-color: var(--accent); }
+.shop .item { flex: 1; }
+.shop .qty { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.busy { position: fixed; inset: 0; background: color-mix(in srgb, var(--bg) 75%, transparent); display: grid; place-items: center; z-index: 50; }
+.busy .box { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 22px 28px; text-align: center; box-shadow: 0 8px 30px rgb(0 0 0 / .15); }
+.spinner { width: 34px; height: 34px; margin: 0 auto 10px; border: 3px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>מתכנן הארוחות</h1>
+      <p class="sub" id="subtitle">טוען…</p>
+    </div>
+    <nav role="tablist" id="tabs">
+      <button role="tab" data-tab="week" aria-selected="true">השבוע</button>
+      <button role="tab" data-tab="pantry" aria-selected="false">המלאי</button>
+      <button role="tab" data-tab="shop" aria-selected="false">קניות<span class="badge" id="shop-badge" hidden></span></button>
+    </nav>
+  </header>
+
+  <div class="stack">
+    <div id="message" hidden></div>
+    <main id="view"></main>
+  </div>
+</div>
+
+<div class="busy" id="busy" hidden><div class="box"><div class="spinner"></div><div id="busy-text">עובד…</div></div></div>
+
+<script>
+const KOSHER = { meat: "בשרי", dairy: "חלבי", parve: "פרווה" };
+const UNIT_SHORT = { "יחידה": "יח'" };
+let S = null;              // the state from the server
+let tab = "week";
+let draft = null;          // the pantry being edited (not saved yet)
+let draftBase = [];        // the server's pantry the edits started from (to merge its later changes)
+let draftDirty = false;
+let purchase = [blankRow()];
+let openForm = null;       // e.g. "guests:שני:lunch" or "skip:שני:lunch"
+const openRecipes = new Set();  // meals whose recipes are shown, e.g. "שני:lunch"
+let importantOpen = null;  // the important-updates panel, as the user left it (null: not touched)
+let busy = false;
+let conflict = null;       // {new, old: [...]} while the user chooses between contradicting wishes
+let choices = [];          // [{label, path, body}] offered by the last message
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const amount = (q, u) => `${q} ${UNIT_SHORT[u] || u}`;
+function blankRow() { return { name: "", quantity: "", unit: "", expires: "" }; }
+
+// ---------- Talking to the server ----------
+
+async function call(path, body, busyText) {
+  busy = true;
+  if (busyText) { $("busy-text").textContent = busyText; $("busy").hidden = false; }
+  try {
+    const r = await fetch(path, body === undefined ? {} : {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const data = await r.json();
+    if (!r.ok) { showMessage({ error: data.error }); return null; }
+    if (data.state) setState(data.state);
+    if (data.message) showMessage(data);
+    return data;
+  } catch (e) {
+    showMessage({ error: "אין חיבור לאפליקציה. בדקי שהחלון השחור של py web.py עדיין פתוח." });
+    return null;
+  } finally {
+    busy = false;
+    $("busy").hidden = true;
+  }
+}
+
+// Coming back to the window: show the latest data (another day may have started,
+// or something changed from the terminal). Unsaved pantry edits and typed text are kept.
+async function refresh() {
+  if (busy || document.hidden || !S) return;
+  try {
+    const r = await fetch("/api/state");
+    if (r.ok) setState((await r.json()).state);
+  } catch (e) { /* the app was closed; the next click will say so */ }
+}
+window.addEventListener("focus", refresh);
+document.addEventListener("visibilitychange", refresh);
+document.addEventListener("toggle", e => {
+  if (e.target.classList?.contains("important")) importantOpen = e.target.open;
+}, true);
+
+// Alphabetical, the Hebrew way (final letters like ם sort with מ).
+const byName = (a, b) => a.name.localeCompare(b.name, "he");
+
+function setState(state) {
+  S = state;
+  S.shopping.sort(byName);
+  const fresh = (S.mode === "new_week" ? S.proposed : S.pantry || []).map(i => ({ ...i, expires: i.expires || "" }));
+  // The pantry table always shows what changed on the server (bought items, a new week...).
+  // Edits not saved yet are kept: they're merged in. New rows stay at the bottom while editing.
+  draft = draftDirty ? mergePantry(draft, draftBase, fresh) : fresh.sort(byName);
+  draftBase = fresh;
+  render();
+}
+
+// A row's values, to see if the user changed it.
+const rowKey = r => JSON.stringify([String(r.name).trim(), String(r.quantity), r.unit || "", r.expires || ""]);
+
+/* What the table shows when there are unsaved edits and the server's pantry changed:
+   the user's rows as they are, with the server's changes to rows the user didn't touch.
+   base: the server's pantry the edits started from. */
+function mergePantry(rows, base, fresh) {
+  const baseBy = new Map(base.map(r => [r.name, r]));
+  const freshBy = new Map(fresh.map(r => [r.name, r]));
+  const merged = [];
+  for (const row of rows) {
+    const was = baseBy.get(row.name), now = freshBy.get(row.name);
+    const touched = !was || rowKey(was) !== rowKey(row);
+    if (touched) merged.push(row);                     // the user's edit (or a new row) wins
+    else if (now) merged.push({ ...row, ...now });     // untouched: take the server's values
+    // untouched and gone from the server: it's gone (e.g. used up)
+  }
+  const shown = new Set(rows.map(r => r.name));
+  for (const now of fresh) {
+    // On the server but not in the table: new there (e.g. just bought), unless the user deleted it.
+    if (!shown.has(now.name) && !baseBy.has(now.name)) merged.push(now);
+    else if (!shown.has(now.name) && rowKey(baseBy.get(now.name)) !== rowKey(now)) merged.push(now);
+  }
+  return merged;
+}
+
+function showMessage(m) {
+  const box = $("message");
+  box.className = "message" + (m.error ? " error" : "");
+  box.innerHTML = `<button class="close" aria-label="סגירה" data-action="close-message">×</button>` +
+    esc(m.error || m.message) +
+    (m.log && m.log.length ? `<details><summary>מה האגנט עשה, צעד אחר צעד</summary><pre>${esc(m.log.join("\n"))}</pre></details>` : "") +
+    (m.conflict ? `<div class="row" style="margin-top:10px">
+      <button class="btn small primary" data-action="wish-keep-new">לבחור בחדשה: "${esc(m.conflict.new)}"</button>
+      <button class="btn small" data-action="wish-keep-old">להשאיר את ${m.conflict.old.length > 1 ? "הקיימות" : "הקיימת"}</button></div>` : "");
+  conflict = m.conflict || null;
+  // Choices the server offers (e.g. a dish that isn't in the recipe book: a new recipe, or a similar one).
+  choices = m.choices || [];
+  if (choices.length) box.innerHTML += `<div class="row" style="margin-top:10px">${choices.map((c, i) =>
+    `<button class="btn small ${i ? "" : "primary"}" data-action="choose" data-i="${i}">${esc(c.label)}</button>`).join("")}</div>`;
+  box.hidden = false;
+  box.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+
+// ---------- Rendering ----------
+
+function render() {
+  $("subtitle").textContent = `היום יום ${S.today_name}, ${S.today.split("-").reverse().join("/")} · שבוע שמתחיל ב-${S.week_start}`;
+  const n = S.shopping.length;
+  $("shop-badge").hidden = !n;
+  $("shop-badge").textContent = n;
+  document.querySelectorAll("#tabs button").forEach(b => b.setAttribute("aria-selected", b.dataset.tab === tab));
+  const view = $("view");
+  // Text typed but not sent yet survives the redraw.
+  const typed = {};
+  for (const id of ["request", "avoid-new", "note-new"]) if ($(id)) typed[id] = $(id).value;
+  if (S.mode === "new_week") view.innerHTML = newWeekView();
+  else if (tab === "pantry") view.innerHTML = pantryView();
+  else if (tab === "shop") view.innerHTML = shopView();
+  else view.innerHTML = weekView();
+  for (const [id, value] of Object.entries(typed)) if ($(id)) $(id).value = value;
+}
+
+function importantView() {
+  const chips = (list, action) => list.map((a, i) => `<span class="chip ${action === "avoid-remove" ? "bad" : "note-chip"}">${esc(a)}
+    <button class="close-chip" data-action="${action}" data-i="${i}" aria-label="הסרה של ${esc(a)}">×</button></span>`).join("");
+  // Normally replaced right away; shown only if that didn't work (e.g. no AI credit).
+  // Normally replaced right away; shown only when that didn't work (e.g. no AI credit, or no dish fits).
+  const toFix = S.to_fix.length ? `<div class="message error" style="margin-top:12px">ארוחות שלא מתאימות לנתונים:
+      ${S.to_fix.map(f => `<div>יום ${esc(f.day)} ${esc(f.meal)}, ${esc(f.dish)}: ${esc(f.reasons.join("; "))}</div>`).join("")}</div>` : "";
+  const wishes = S.family_notes.map((w, i) => `<div class="wish">
+      <div class="row" style="justify-content:space-between;flex-wrap:nowrap"><span>${esc(w.note)}</span>
+      <button class="close-chip" data-action="note-remove" data-i="${i}" aria-label="הסרה">×</button></div>
+      <div class="understood">${w.understood ? `הבנתי: ${esc(w.understood)}` : ""}
+        <span class="pill ${w.rule ? "parve" : "note-chip"}">${w.rule ? "נאכף בכל ארוחה" : "הנחיה כללית לאגנט"}</span></div>
+    </div>`).join("");
+  const open = importantOpen ?? (S.to_fix.length > 0 || !(S.avoid.length || S.family_notes.length));
+  return `${datalist()}<details class="panel important" ${open || S.to_fix.length ? "open" : ""}>
+    <summary><h2>עדכונים חשובים</h2>
+      <span class="muted">${S.avoid.length ? `לא אוכלים: ${esc(S.avoid.join(", "))}` : ""}${S.avoid.length && S.family_notes.length ? " · " : ""}${S.family_notes.length ? `${S.family_notes.length} העדפות` : ""}</span></summary>
+    <div class="important-grid">
+      <div>
+        <h3>הבית</h3>
+        <p class="note">כמה אנשים אוכלים בדרך כלל, ואילו ימים וארוחות לתכנן. ארוחה עם אורחים נשארת עם המספר שלה.</p>
+        <div class="row"><label for="set-people">אנשים בבית</label>
+          <input type="number" id="set-people" min="1" max="${S.settings.max_people}" value="${S.settings.people}" style="width:5em"></div>
+        <div class="row" style="margin-top:8px" role="group" aria-label="ימים לתכנון">${S.settings.all_days.map(d => `
+          <label class="check"><input type="checkbox" class="set-day" value="${esc(d)}" ${S.settings.plan_days.includes(d) ? "checked" : ""}> ${esc(d)}</label>`).join("")}</div>
+        <div class="row" style="margin-top:6px" role="group" aria-label="ארוחות לתכנון">${[["lunch", "צהריים"], ["dinner", "ערב"]].map(([m, l]) => `
+          <label class="check"><input type="checkbox" class="set-meal" value="${m}" ${S.settings.meals.includes(m) ? "checked" : ""}> ${l}</label>`).join("")}</div>
+        <div class="row" style="margin-top:8px"><button class="btn small" data-action="save-settings">שמירה</button></div>
+      </div>
+      <div>
+        <h3>לא אוכלים אף פעם</h3>
+        <p class="note">אלרגיות ודברים שהמשפחה לא אוכלת. מנות איתם לא יוצעו, וארוחות בתפריט שמכילות אותם יוחלפו מיד. מספיק חלק מהשם: "אפונה" פוסל גם "אפונה יבשה".</p>
+        <div class="row">${chips(S.avoid, "avoid-remove") || '<span class="muted">אין.</span>'}</div>
+        <div class="row" style="margin-top:8px"><input id="avoid-new" list="ingredients" placeholder="למשל: אגוזים" aria-label="מצרך שלא אוכלים">
+        <button class="btn small" data-action="avoid-add">הוספה</button></div>
+      </div>
+      <div>
+        <h3>העדפות קבועות</h3>
+        <p class="note">במילים שלך. העדפה על סוג הארוחה (למשל "בשלישי בערב בשרי") נאכפת בכל ארוחה. העדפה אחרת היא הנחיה לאגנט בתכנון.</p>
+        <div class="stack" style="gap:8px">${wishes || '<span class="muted">אין.</span>'}</div>
+        <div class="row" style="margin-top:8px"><input id="note-new" style="flex:1;min-width:12em" placeholder="למשל: הילדים לא אוהבים פטריות" aria-label="העדפה חדשה">
+        <button class="btn small" data-action="note-add">הוספה</button></div>
+      </div>
+    </div>
+    <p class="note" style="margin:12px 0 0">מגיע אורח עם אלרגיה? זה רק לפעם אחת: כותבים בבקשה לאגנט, למשל "ביום רביעי בערב מגיע אורח אלרגי לאגוזים", ורק הארוחה ההיא תשתנה.</p>
+    ${toFix}
+  </details>`;
+}
+
+function weekView() {
+  if (S.mode === "no_plan") {
+    return `<div class="stack">${importantView()}<div class="panel stack">
+      <div><h2>עדיין אין תפריט לשבוע הזה</h2>
+      <p class="note">כדאי לעבור קודם על לשונית המלאי ולוודא שהכמויות נכונות. אחר כך האגנט יתכנן את הימים שנשארו בשבוע לפי מה שיש בבית.</p></div>
+      <div class="row"><button class="btn primary" data-action="plan">לתכנן את השבוע</button>
+      <button class="btn" data-tab="pantry">לבדוק את המלאי קודם</button></div></div></div>`;
+  }
+  const days = S.days.map(d => `
+    <article class="day${d.today ? " today" : ""}${d.past ? " past" : ""}">
+      <div class="day-head"><span class="day-name">יום ${esc(d.name)}${d.today ? '<span class="tag">היום</span>' : ""}${d.past ? '<span class="tag" style="color:var(--muted)">עבר</span>' : ""}</span>
+      <span class="day-date">${d.date}</span></div>
+      ${d.meals.map(m => mealView(d, m)).join("")}
+    </article>`).join("");
+  return `<div class="stack">
+    <div class="panel">
+      <h2>בקשה לאגנט</h2>
+      <p class="note">כתבי במילים שלך מה השתנה, והאגנט יעדכן רק את הארוחות שהבקשה מדברת עליהן.</p>
+      <div class="row" style="flex-wrap:nowrap;align-items:stretch">
+        <textarea id="request" rows="2" placeholder="למשל: ביום רביעי בערב יבואו ההורים, נהיה 4 אנשים"></textarea>
+        <button class="btn primary" data-action="change">לשלוח</button>
+      </div>
+    </div>
+    ${importantView()}
+    <section class="days">${days}</section>
+    <div class="row muted" style="font-size:.9rem">${openForm === "replan"
+      ? `לתכנן מחדש את כל הימים שנשארו? הארוחות שכבר תוכננו בימים האלה יוחלפו.
+         <button class="btn small primary" data-action="plan">כן, לתכנן מחדש</button>
+         <button class="btn small" data-action="cancel">ביטול</button>`
+      : `<button class="btn small" data-action="open" data-form="replan">לתכנן מחדש את כל השבוע</button>`}</div>
+  </div>`;
+}
+
+function mealView(d, m) {
+  const key = `${d.name}:${m.meal}`;
+  const attrs = `data-day="${esc(d.name)}" data-meal="${m.meal}"`;
+  if (m.empty) {
+    return `<div class="meal"><span class="meal-label">${m.label}</span>
+      <span class="side-dish">אין ארוחה מתוכננת</span>
+      ${d.past ? "" : `<div class="actions"><button class="btn small" data-action="replace" ${attrs}>לתכנן ארוחה</button></div>`}
+    </div>`;
+  }
+  let form = "";
+  if (openForm === "guests:" + key) {
+    form = `<div class="inline-form">כמה אנשים יאכלו?
+      <input type="number" id="people" min="1" max="30" value="${m.people}">
+      <button class="btn small primary" data-action="guests" ${attrs}>עדכון</button>
+      <button class="btn small" data-action="cancel">ביטול</button></div>`;
+  } else if (openForm === "skip:" + key) {
+    form = `<div class="inline-form">להסיר את הארוחה? המצרכים שלה יחזרו למלאי.
+      <button class="btn small primary" data-action="skip" ${attrs}>כן, לא בישלנו</button>
+      <button class="btn small" data-action="cancel">ביטול</button></div>`;
+  }
+  const people = m.people !== S.people ? ` · ${m.people} אנשים` : "";
+  const open = openRecipes.has(key);
+  const recipes = open ? `<div class="recipes">${m.recipes.map(r => `<div class="recipe">
+      <h4>${esc(r.name)} <span class="muted">· כ-${r.minutes} דקות</span></h4>
+      ${r.notes.length ? `<p class="meal-note">📝 עודכן לארוחה הזאת: ${esc(r.notes.join(", "))}</p>` : ""}
+      <div class="recipe-label">מצרכים ל-${m.people} אנשים</div>
+      <ul>${r.ingredients.map(i => `<li class="${i.removed ? "removed" : ""}">${esc(i.text)}${
+        i.added ? ' <span class="chip added">נוסף</span>' : ""}${i.removed ? ' <span class="chip bad">בלי</span>' : ""}</li>`).join("")}</ul>
+      <div class="recipe-label">אופן ההכנה</div>
+      <ol>${r.steps.map(s => `<li>${esc(s)}</li>`).join("")}${r.rewritten ? "" : r.notes.map(n =>
+        `<li class="meal-note">${esc(n)}</li>`).join("")}</ol>
+      ${r.servings !== m.people ? `<p class="note">כמויות שכתובות בשלבים, כמו קמח, שמן ומים, הן למתכון המלא ל-${r.servings}.</p>` : ""}
+    </div>`).join("")}</div>` : "";
+  return `<div class="meal">
+    <span class="meal-label"><span>${m.label}${people}</span><span class="pill ${m.kosher}">${KOSHER[m.kosher]}</span></span>
+    <button class="dish-link main-dish" data-action="recipe" data-key="${esc(key)}" aria-expanded="${open}">${esc(m.main)}</button>
+    ${m.side ? `<button class="dish-link side-dish" data-action="recipe" data-key="${esc(key)}" aria-expanded="${open}">+ ${esc(m.side)}</button>` : ""}
+    <button class="recipe-toggle" data-action="recipe" data-key="${esc(key)}">${open ? "▾ להסתיר את המתכון" : "▸ איך מכינים"}</button>
+    ${recipes}
+    ${m.notes.length ? `<span class="meal-note">📝 ${esc(m.notes.join(" · "))}</span>` : ""}
+    ${m.to_buy.length ? `<span class="to-buy">עוד לקנות: ${esc(m.to_buy.join(", "))}</span>` : ""}
+    <div class="actions">
+      ${d.past ? "" : `<button class="btn small" data-action="open" data-form="guests:${esc(key)}">אורחים</button>
+      <button class="btn small" data-action="replace" ${attrs}>להחליף מנה</button>`}
+      <button class="btn small danger" data-action="open" data-form="skip:${esc(key)}">לא בישלנו</button>
+    </div>${form}
+  </div>`;
+}
+
+function unitCell(row, i, list) {
+  if (S.units[row.name]) return `<span class="unit-fixed">${esc(S.units[row.name])}</span>`;
+  return `<select data-list="${list}" data-i="${i}" data-field="unit" aria-label="יחידה">
+    <option value="">יחידה…</option>${S.unit_choices.map(u => `<option ${u === row.unit ? "selected" : ""}>${esc(u)}</option>`).join("")}</select>`;
+}
+
+function pantryTable(list, rows, withFree) {
+  const today = S.today;
+  return `<div class="table-wrap"><table>
+    <thead><tr><th>מוצר</th><th>כמות</th><th>יחידה</th><th>תוקף</th>${withFree ? "<th>פנוי</th>" : ""}<th></th></tr></thead>
+    <tbody>${rows.map((r, i) => {
+      const expired = r.expires && r.expires < today;
+      const free = withFree && r.free !== undefined && r.free !== r.quantity && !draftDirty
+        ? `<span class="free">${r.free} (השאר שמור לארוחות)</span>` : "";
+      return `<tr class="${expired ? "expired" : ""}">
+        <td><input class="name" list="ingredients" value="${esc(r.name)}" data-list="${list}" data-i="${i}" data-field="name" aria-label="מוצר"></td>
+        <td><input class="qty" type="number" min="0" step="any" value="${esc(r.quantity)}" data-list="${list}" data-i="${i}" data-field="quantity" aria-label="כמות"></td>
+        <td>${unitCell(r, i, list)}</td>
+        <td><input type="date" value="${esc(r.expires || "")}" data-list="${list}" data-i="${i}" data-field="expires" aria-label="תוקף">
+          ${expired ? '<span class="chip bad">פג תוקף</span>' : ""}</td>
+        ${withFree ? `<td>${free}</td>` : ""}
+        <td><button class="btn small danger" data-action="remove-row" data-list="${list}" data-i="${i}" aria-label="מחיקה">מחיקה</button></td>
+      </tr>`; }).join("")}</tbody></table></div>`;
+}
+
+// The ingredient names suggested while typing (once per view: ids must be unique).
+const datalist = () => `<datalist id="ingredients">${Object.keys(S.units).map(n => `<option value="${esc(n)}">`).join("")}</datalist>`;
+
+function pantryView() {
+  const notes = [];
+  if (S.notes.expired?.length) notes.push(`<span class="chip bad">פג תוקף: ${esc(S.notes.expired.join(", "))}</span>`);
+  if (S.notes.unused?.length) notes.push(`<span class="chip">אף מתכון לא משתמש ב: ${esc(S.notes.unused.join(", "))}</span>`);
+  return `${datalist()}<div class="stack">
+    <div class="panel">
+      <h2>קנייה חדשה</h2>
+      <p class="note">קנית משהו שלא היה ברשימת הקניות? מוסיפים כאן, והכמות מתווספת למה שכבר יש. את מה שברשימה מסמנים בלשונית "קניות".</p>
+      ${pantryTable("purchase", purchase, false)}
+      <div class="row" style="margin-top:10px"><button class="btn small" data-action="add-row" data-list="purchase">+ עוד מוצר</button>
+      <button class="btn primary" data-action="purchase">הוספה למלאי</button></div>
+    </div>
+    <div class="panel">
+      <h2>המלאי בבית</h2>
+      <p class="note">כל מה שיש בבית עכשיו. אפשר לתקן כמויות ותאריכים, למחוק מה שנגמר ולהוסיף מוצרים. "פנוי" הוא מה שלא שמור לארוחות שכבר בתפריט.</p>
+      ${notes.length ? `<div class="row" style="margin-bottom:10px">${notes.join("")}</div>` : ""}
+      ${pantryTable("draft", draft, true)}
+      <div class="row" style="margin-top:10px"><button class="btn small" data-action="add-row" data-list="draft">+ מוצר</button>
+      <button class="btn primary" data-action="save-pantry">שמירת המלאי</button>
+      ${draftDirty ? `<span class="muted">יש שינויים שלא נשמרו</span> <button class="btn small" data-action="reset-pantry">ביטול השינויים</button>` : ""}</div>
+    </div>
+  </div>`;
+}
+
+function shopView() {
+  if (S.mode !== "week") return `<div class="panel"><p class="note">רשימת הקניות תופיע אחרי שהאגנט יתכנן את השבוע.</p></div>`;
+  if (!S.shopping.length) return `<div class="panel"><h2>רשימת קניות</h2><p class="note">אין מה לקנות. כל מה שהתפריט צריך כבר בבית.</p></div>`;
+  return `<div class="panel">
+    <h2>רשימת קניות</h2>
+    <p class="note">מה שהתפריט צריך ואין בבית. סמני מה שקנית ולחצי "נקנה", והמוצרים יעברו למלאי.</p>
+    <ul class="shop">${S.shopping.map((s, i) => `<li><label for="b${i}">
+      <input type="checkbox" id="b${i}" value="${esc(s.name)}"><span class="item">${esc(s.name)}</span>
+      <span class="qty">${esc(amount(s.quantity, s.unit))}</span></label></li>`).join("")}</ul>
+    <div class="row" style="margin-top:12px"><button class="btn primary" data-action="bought">נקנה (מה שסימנתי)</button>
+    <button class="btn" data-action="bought-all">קניתי הכול</button>
+    <button class="btn" data-action="copy-list">העתקת הרשימה</button></div>
+    <textarea id="list-text" readonly hidden aria-label="רשימת הקניות כטקסט">${esc(shoppingText())}</textarea>
+  </div>`;
+}
+
+// The list as plain text, to paste in WhatsApp or a note.
+const shoppingText = () => ["רשימת קניות:", ...S.shopping.map(s => `• ${s.name} ${amount(s.quantity, s.unit)}`)].join("\n");
+
+function newWeekView() {
+  return `${datalist()}<div class="panel stack">
+    <div><h2>פתיחת שבוע חדש</h2>
+    <p class="note">זה מה שאמור להישאר בבית מהשבוע של ${esc(S.last_week)}, אחרי שהורדנו את המצרכים של כל הארוחות שבושלו.
+    עברי על הרשימה: תקני כמויות, מחקי מה שנגמר או נזרק, והוסיפי מה שקנית. אחר כך מאשרים, והאגנט יוכל לתכנן את השבוע.</p></div>
+    ${pantryTable("draft", draft, false)}
+    <div class="row"><button class="btn small" data-action="add-row" data-list="draft">+ מוצר</button>
+    <button class="btn primary" data-action="new-week">אישור המלאי ופתיחת השבוע</button></div>
+  </div>`;
+}
+
+// ---------- Reading the forms ----------
+
+function rowsFor(list) { return list === "purchase" ? purchase : draft; }
+
+function toItems(rows) {
+  return rows.filter(r => String(r.name).trim()).map(r => ({
+    name: String(r.name).trim(),
+    quantity: r.quantity === "" ? null : Number(r.quantity),
+    unit: S.units[String(r.name).trim()] || r.unit,
+    expires: r.expires || null,
+  }));
+}
+
+document.addEventListener("input", e => {
+  const { list, i, field } = e.target.dataset;
+  if (!list) return;
+  const rows = rowsFor(list);
+  rows[i][field] = e.target.value;
+  if (list === "draft") draftDirty = true;
+  // A known ingredient gets the recipes' unit: redraw that cell only, so typing isn't interrupted.
+  if (field === "name") e.target.closest("tr").children[2].innerHTML = unitCell(rows[i], i, list);
+});
+
+// ---------- Buttons ----------
+
+const ACTIONS = {
+  "close-message": () => { $("message").hidden = true; },
+  "open": el => { openForm = el.dataset.form; render(); },
+  "recipe": el => {
+    const key = el.dataset.key;
+    openRecipes.has(key) ? openRecipes.delete(key) : openRecipes.add(key);
+    render();
+  },
+  "cancel": () => { openForm = null; render(); },
+  "plan": () => { openForm = null; call("/api/plan", {}, "האגנט מתכנן את השבוע… זה לוקח בערך דקה"); },
+  "change": () => {
+    const request = $("request").value.trim();
+    if (!request) return showMessage({ error: "צריך לכתוב מה לשנות." });
+    call("/api/change", { request }, "האגנט מעדכן את התפריט…")
+      .then(ok => { if (ok && $("request")) $("request").value = ""; });
+  },
+  "replace": el => call("/api/replace", { day: el.dataset.day, meal: el.dataset.meal }, "האגנט בוחר מנה אחרת…"),
+  "guests": async el => {
+    const people = Number($("people").value);
+    if (!Number.isInteger(people) || people < 1) return showMessage({ error: "מספר האנשים צריך להיות מספר שלם, 1 או יותר." });
+    if (await call("/api/guests", { day: el.dataset.day, meal: el.dataset.meal, people }, checking("מעדכן"))) { openForm = null; render(); }
+  },
+  "skip": async el => {
+    if (await call("/api/skip", { day: el.dataset.day, meal: el.dataset.meal }, "מעדכן…")) { openForm = null; render(); }
+  },
+  "bought": () => {
+    const names = [...document.querySelectorAll(".shop input:checked")].map(i => i.value);
+    if (!names.length) return showMessage({ error: "לא סימנת שום מוצר." });
+    call("/api/bought", { names }, "מעדכן את המלאי…");
+  },
+  "bought-all": () => call("/api/bought", {}, "מעדכן את המלאי…"),
+  "copy-list": async () => {
+    try {
+      await navigator.clipboard.writeText(shoppingText());
+      showMessage({ message: "הרשימה הועתקה. אפשר להדביק אותה בוואטסאפ או בפתק." });
+    } catch (e) {  // no clipboard access: show the text, selected, to copy by hand
+      const box = $("list-text");
+      box.hidden = false; box.rows = S.shopping.length + 2; box.select();
+      showMessage({ message: "לא הצלחתי להעתיק אוטומטית. הרשימה מסומנת למטה: Ctrl+C כדי להעתיק." });
+    }
+  },
+  "save-settings": () => {
+    const people = Number($("set-people").value);
+    const plan_days = [...document.querySelectorAll(".set-day:checked")].map(i => i.value);
+    const meals = [...document.querySelectorAll(".set-meal:checked")].map(i => i.value);
+    call("/api/settings", { people, plan_days, meals }, checking("שומר"));
+  },
+  "avoid-add": () => {
+    const name = $("avoid-new").value.trim();
+    if (!name) return showMessage({ error: "צריך לכתוב שם של מצרך." });
+    call("/api/avoid", { items: [...S.avoid, name] }, checking("שומר"))
+      .then(ok => { if (ok && $("avoid-new")) $("avoid-new").value = ""; });
+  },
+  "avoid-remove": el => call("/api/avoid", { items: S.avoid.filter((_, i) => i !== Number(el.dataset.i)) }, checking("שומר")),
+  // Two wishes that contradict each other: the user chooses (the old one is removed).
+  "wish-keep-new": () => {
+    if (!conflict) return;
+    const items = [...S.family_notes.map(w => w.note).filter(n => !conflict.old.includes(n)), conflict.new];
+    call("/api/family-notes", { items }, checking("שומר"));
+  },
+  "choose": el => {
+    const c = choices[Number(el.dataset.i)];
+    if (!c) return;
+    if (c.dismiss) return showMessage({ message: c.dismiss });  // "keep it as it is": nothing to change
+    call(c.path, c.body, c.body.create ? "האגנט כותב מתכון חדש…" : checking("מעדכן"));
+  },
+  "wish-keep-old": () => { conflict = null; showMessage({ message: "בסדר, ההעדפה החדשה לא נשמרה." }); },
+  "note-add": () => {
+    const note = $("note-new").value.trim();
+    if (!note) return showMessage({ error: "צריך לכתוב את ההעדפה." });
+    call("/api/family-notes", { items: [...S.family_notes.map(w => w.note), note] },
+         checking("שומר"))
+      .then(ok => { if (ok && $("note-new")) $("note-new").value = ""; });
+  },
+  "note-remove": el => call("/api/family-notes", { items: S.family_notes.map(w => w.note).filter((_, i) => i !== Number(el.dataset.i)) }, checking("שומר")),
+  "add-row": el => { rowsFor(el.dataset.list).push(blankRow()); if (el.dataset.list === "draft") draftDirty = true; render(); },
+  "remove-row": el => {
+    const rows = rowsFor(el.dataset.list);
+    rows.splice(Number(el.dataset.i), 1);
+    if (el.dataset.list === "purchase" && !rows.length) rows.push(blankRow());
+    if (el.dataset.list === "draft") draftDirty = true;
+    render();
+  },
+  "reset-pantry": () => { draftDirty = false; setState(S); },
+  "save-pantry": async () => {
+    const saved = await saveDraft("/api/pantry");
+    if (saved) setState(saved.state);
+  },
+  "purchase": async () => {
+    const items = toItems(purchase);
+    if (!items.length) return showMessage({ error: "צריך למלא לפחות מוצר אחד." });
+    if (await call("/api/purchase", { items }, checking("מוסיף למלאי"))) { purchase = [blankRow()]; render(); }
+  },
+  "new-week": async () => {
+    const saved = await saveDraft("/api/new-week");
+    if (saved) { tab = "week"; setState(saved.state); }
+  },
+};
+
+// Every change to the data is followed by fitting the menu to it (when there is one).
+// A new wish is first understood by the AI, which takes a few seconds.
+const checking = action => S.mode === "week" ? `${action} ומתאים את התפריט…` : `${action}…`;
+
+async function saveDraft(path) {
+  const wasDirty = draftDirty;
+  draftDirty = false;   // so the state that comes back refreshes the table
+  const result = await call(path, { items: toItems(draft) }, path === "/api/pantry" ? checking("שומר") : "שומר…");
+  if (!result) draftDirty = wasDirty;
+  return result;
+}
+
+document.addEventListener("click", e => {
+  const tabBtn = e.target.closest("[data-tab]");
+  if (tabBtn) { tab = tabBtn.dataset.tab; render(); return; }
+  const el = e.target.closest("[data-action]");
+  if (el && ACTIONS[el.dataset.action]) ACTIONS[el.dataset.action](el);
+});
+
+call("/api/state");
+</script>
+</body>
+</html>

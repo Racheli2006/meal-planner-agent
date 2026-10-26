@@ -1,0 +1,42 @@
+{
+  "plan_days": [
+    "ראשון",
+    "שני",
+    "שלישי",
+    "רביעי",
+    "חמישי"
+  ],
+  "meals": [
+    "lunch",
+    "dinner"
+  ],
+  "people": 2,
+  "side_dish_required": true,
+  "no_dairy_after_meat_same_day": true,
+  "max_missing_per_dish": 4,
+  "max_missing_per_dish_with_guests": 6,
+  "repeat_main_in_week": false,
+  "max_uses_per_side_in_week": 2,
+  "expiring_soon_days": 7,
+  "avoid_ingredients": [],
+  "family_notes": [
+    "בימי חמישי בצהרים רוצה ארוחה בשרית תמיד"
+  ],
+  "slot_rules": [
+    {
+      "note": "בימי חמישי בצהרים רוצה ארוחה בשרית תמיד",
+      "days": [
+        "חמישי"
+      ],
+      "meals": [
+        "lunch"
+      ],
+      "allowed": [
+        "meat"
+      ]
+    }
+  ],
+  "understood": {
+    "בימי חמישי בצהרים רוצה ארוחה בשרית תמיד": "בימי חמישי בצהריים חייבת להיות ארוחה בשרית."
+  }
+}

@@ -1,0 +1,24 @@
+# Secrets: the API key lives here, never in the repository
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Files the program writes for a moment while saving (see write_pantry, save_plan)
+*.tmp
+
+# Temporary folders of the tests (deleted when the tests end; never uploaded if one is left)
+meal-planner-tests-*/
+tmp*/
+
+# Old weeks' menus, kept on this computer only
+output/archive/
+
+# Editors and the operating system
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store

@@ -1,0 +1,63 @@
+$ py main.py plan
+(הרצה אמיתית של האג'נט, יום שני 26/10/2026)
+
+🗓️  מתכנן את השבוע שמתחיל ב-25/10: שני, שלישי, רביעי, חמישי
+
+[1] get_pantry() -> ok
+[2] get_plan_status() -> 0 planned, 8 empty
+[3] find_meal_options(day=שני, meal=lunch, people=2) -> 19 valid mains
+[4] add_meal_to_plan(day=שני, meal=lunch, main_id=1, side_id=23, people=2) -> ✓ שניצל עוף + אורז לבן  (slots left: 7)
+[5] find_meal_options(day=שני, meal=dinner, people=2) -> 12 valid mains
+[6] add_meal_to_plan(day=שני, meal=dinner, main_id=7, side_id=24, people=2) -> ✓ פרגיות במחבת + פירה תפוחי אדמה  (slots left: 6)
+[7] find_meal_options(day=שלישי, meal=lunch, people=2) -> 17 valid mains
+[8] add_meal_to_plan(day=שלישי, meal=lunch, main_id=6, side_id=23, people=2) -> ✓ פשטידת בשר ותפוחי אדמה + אורז לבן  (slots left: 5)
+[9] find_meal_options(day=שלישי, meal=dinner, people=2) -> 11 valid mains
+[10] add_meal_to_plan(day=שלישי, meal=dinner, main_id=16, side_id=25, people=2) -> ✓ חביתת ירק + סלט ירקות קצוץ  (slots left: 4)
+[11] find_meal_options(day=רביעי, meal=lunch, people=2) -> 16 valid mains
+[12] add_meal_to_plan(day=רביעי, meal=lunch, main_id=19, side_id=24, people=2) -> ✓ מרק אפונה + פירה תפוחי אדמה  (slots left: 3)
+[13] find_meal_options(day=רביעי, meal=dinner, people=2) -> 14 valid mains
+[14] add_meal_to_plan(day=רביעי, meal=dinner, main_id=10, side_id=25, people=2) -> ✓ לביבות גבינה + סלט ירקות קצוץ  (slots left: 2)
+[15] find_meal_options(day=חמישי, meal=lunch, people=2) -> 5 valid mains
+[16] add_meal_to_plan(day=חמישי, meal=lunch, main_id=2, side_id=26, people=2) -> ✓ עוף בתנור עם תפוחי אדמה + סלט כרוב  (slots left: 1)
+[17] find_meal_options(day=חמישי, meal=dinner, people=2) -> 8 valid mains
+[18] add_meal_to_plan(day=חמישי, meal=dinner, main_id=31, side_id=27, people=2) -> ✓ פילה דג בתנור + צימעס גזר  (slots left: 0)
+[19] get_plan_status() -> 8 planned, 0 empty
+
+תפריט לשבוע שמתחיל ב-25/10/2026
+
+יום ראשון (25/10)
+   צהריים: —
+   ערב: —
+
+יום שני (26/10)
+   צהריים: שניצל עוף + אורז לבן  (בשרי)
+   ערב: פרגיות במחבת + פירה תפוחי אדמה  (בשרי)
+
+יום שלישי (27/10)
+   צהריים: פשטידת בשר ותפוחי אדמה + אורז לבן  (בשרי)
+   ערב: חביתת ירק + סלט ירקות קצוץ  (פרווה)
+
+יום רביעי (28/10)
+   צהריים: מרק אפונה + פירה תפוחי אדמה  (פרווה)
+   ערב: לביבות גבינה + סלט ירקות קצוץ  (חלבי)
+
+יום חמישי (29/10)
+   צהריים: עוף בתנור עם תפוחי אדמה + סלט כרוב  (בשרי)
+   ערב: פילה דג בתנור + צימעס גזר  (פרווה)
+
+רשימת קניות:
+   ☐ דבש: 30 גרם
+   ☐ כרעי עוף: 2 יח'
+   ☐ שיני שום: 2 יח'
+   ☐ תפוחי אדמה: 2 יח'
+
+💡 יש בבית מוצרים שאף מתכון לא משתמש בהם: חצילים, קוטג', קמח מלא, בצל סגול, בטטות, קוסקוס, חומץ. כדאי להוסיף מתכונים שמשתמשים בהם.
+
+💬 סיכום האגנט:
+ביום שני בחרתי בשניצל עוף עם אורז לבן כי לא היה צורך לקנות כלום. ביום שלישי תכננתי פשטידת בשר ותפוחי אדמה עם אורז לבן, שוב בלי קניות. ביום חמישי בצהריים בחרתי בעוף בתנור עם תפוחי אדמה וסלט כרוב, כי זה עונה על הרצון לארוחה בשרית. 
+
+היו קניות של דבש, כרעי עוף, שיני שום ותפוחי אדמה.
+
+(צעדים: 20, טוקנים: 142,804, עלות משוערת: 2.2 סנט)
+
+📁 נשמר ב: output/menu.txt
