@@ -12,6 +12,7 @@ Nothing here calls the AI. The quantities follow one rule:
 
 import copy
 import json
+import re
 from collections import Counter
 from datetime import date
 from pathlib import Path
@@ -95,6 +96,59 @@ def add_to_pantry(additions, units, today, path=None, used=None):
             dates = [d for d in (item.get("expires"), add["expires"]) if d]
             item["expires"] = min(dates) if dates else None  # ISO dates sort as text
     return write_pantry(items, units, today, path)
+
+
+# ---------- Ratings: what the family liked ----------
+
+def ratings_file():
+    return tools.DATA_DIR / "ratings.json"
+
+
+def read_ratings(path=None):
+    """{recipe id: {"up": times liked, "down": times not}}, kept across weeks."""
+    path = Path(path or ratings_file())
+    if not path.exists():
+        return {}
+    data = tools.load_json(path).get("ratings", {})
+    return {int(k): {"up": v.get("up", 0), "down": v.get("down", 0)} for k, v in data.items()}
+
+
+def rating_scores(path=None):
+    """{recipe id: likes minus dislikes}, for the planner (only dishes that were rated)."""
+    return {i: r["up"] - r["down"] for i, r in read_ratings(path).items() if r["up"] != r["down"]}
+
+
+def rate_dish(planner, day, meal, dish_id, rating, path=None):
+    """The family's rating of one dish of a meal they ate (the main, the side, or an extra):
+    "up", "down", or None to take it back. The meal remembers it, so rating again
+    replaces the old rating instead of adding to it. Only for today or a day that's over.
+    The caller saves the plan."""
+    if rating not in ("up", "down", None):
+        raise tools.DataError("דירוג לא תקין")
+    entry = planner.plan.get(day, {}).get(meal)
+    if entry is None or dish_id not in tools.meal_dishes(entry):
+        raise tools.DataError("המנה הזאת לא בארוחה")
+    if planner.day_date(day) > planner.today:
+        raise tools.DataError("אפשר לדרג מנה רק אחרי שאכלתם אותה.")
+    path = Path(path or ratings_file())
+    counts = read_ratings(path)
+    given = entry.setdefault("ratings", {})  # {dish id (text, as in JSON): "up" / "down"}
+    c = counts.setdefault(dish_id, {"up": 0, "down": 0})
+    old = given.get(str(dish_id))
+    if old:
+        c[old] = max(0, c[old] - 1)
+    if rating:
+        c[rating] += 1
+        given[str(dish_id)] = rating
+    else:
+        given.pop(str(dish_id), None)
+    if not given:
+        entry.pop("ratings")
+    data = {"ratings": {str(i): c for i, c in sorted(counts.items()) if c["up"] or c["down"]}}
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(path)
+    planner.ratings = rating_scores(path)
 
 
 # ---------- During the week ----------
@@ -212,7 +266,7 @@ def reallocate(planner, pantry):
 
     changed = 0
     for day, entry in future:
-        dishes = [planner.recipes[i] for i in (entry["main"], entry["side"]) if i is not None]
+        dishes = [planner.recipes[i] for i in tools.meal_dishes(entry)]
         reserved, to_buy, _ = planner.allocate(dishes, entry["people"], planner.day_date(day))
         for name, qty in reserved.items():
             available[name]["quantity"] -= qty
@@ -274,10 +328,11 @@ def slots_to_fix(planner, keep=()):
         if "lunch" in meals and "dinner" in meals:
             dinner = meals["dinner"]
             # Lunch is kept when it's a tie: it's sooner, and may already be cooking.
-            if planner.same_day_clash(day, "dinner", dinner["main"], dinner["side"]):
+            extras = dinner.get("extras", [])
+            if planner.same_day_clash(day, "dinner", dinner["main"], dinner["side"], extras):
                 [slot] = the_one_to_change([(day, "dinner"), (day, "lunch")])
                 flag(*slot, "אותו סוג מנה או אותה תוספת כמו בארוחה השנייה באותו יום", hard)
-            if not planner.check_kosher(dinner["main"], dinner["side"], day, "dinner").get("ok", True):
+            if not planner.check_kosher(dinner["main"], dinner["side"], day, "dinner", extras).get("ok", True):
                 [slot] = the_one_to_change([(day, "dinner"), (day, "lunch")])
                 flag(*slot, "ארוחה חלבית אחרי ארוחה בשרית באותו יום", hard)
 
@@ -348,14 +403,16 @@ def conflicting_wishes(planner, rule):
 
 def _best_choice(planner, options, keep_main=None):
     """The program's pick among options that already pass every rule: the same main as
-    before if it still fits (so a repeated side changes only the side), then dishes not
-    used yet this week, then the least shopping, then using what expires soon."""
+    before if it still fits (so a repeated side changes only the side), not something the
+    family disliked, dishes not used yet this week, the least shopping, then what they
+    liked most, then using what expires soon."""
     usage = planner.dish_usage()
     best = None
     for o in options:
         for side_id, side_missing in o["sides"]:
-            score = (o["main_id"] != keep_main, usage[o["main_id"]] > 0, usage[side_id], o["to_buy"] + side_missing,
-                     -len(o.get("uses_expiring_soon", [])))
+            liked = planner.ratings.get(o["main_id"], 0) + planner.ratings.get(side_id, 0)
+            score = (o["main_id"] != keep_main, liked < 0, usage[o["main_id"]] > 0, usage[side_id],
+                     o["to_buy"] + side_missing, -liked, -len(o.get("uses_expiring_soon", [])))
             if best is None or score < best[0]:
                 best = (score, o["main_id"], side_id)
     return best and best[1:]
@@ -471,11 +528,17 @@ WHY_NOT = [("already over", "היום הזה כבר עבר"),
            ("family's wish", "זה סותר העדפה קבועה של המשפחה"),
            ("other meal of", "יוצא אותו סוג מנה או אותה תוספת פעמיים באותו יום"),
            ("not suitable for", "המנה לא מתאימה לארוחה הזאת"),
-           ("already has this side", "זו כבר התוספת בארוחה הזאת")]
+           ("already has this side", "זו כבר התוספת בארוחה הזאת"),
+           ("already in this meal", "המנה כבר בארוחה הזאת"),
+           ("nothing is planned", "אין ארוחה מתוכננת בזמן הזה")]
 
 
 def why_not(error):
-    """A tool's refusal (English, for the AI) in words for the user."""
+    """A tool's refusal (English, for the AI) in words for the user. A clash with the other
+    meal of the day names the dish it clashes with."""
+    clash = re.search(r"the other meal of \S+ (?:is already|already has) (.+?)(?:: not the same| next to it| as its side|$)", error)
+    if clash:
+        return f"בארוחה השנייה של אותו יום כבר יש {clash.group(1)}, ולא אוכלים פעמיים ביום אותו סוג מנה"
     return next((hebrew for key, hebrew in WHY_NOT if key in error), "המנה לא מתאימה לכללים של הארוחה")
 
 
@@ -568,7 +631,7 @@ def add_meal_note(planner, day, meal, dish_id, text, adapted=None):
     on; without it, the change is shown as a last step. Only this meal: the recipe book
     doesn't change. The caller saves the plan."""
     entry = planner.plan.get(day, {}).get(meal)
-    if entry is None or dish_id not in (entry["main"], entry["side"]):
+    if entry is None or dish_id not in tools.meal_dishes(entry):
         raise tools.DataError("המנה הזאת לא בארוחה")
     notes = entry.setdefault("notes", [])
     if {"dish": dish_id, "text": text} not in notes:
@@ -652,7 +715,7 @@ def put_dish(planner, day, meal, name, role=None):
     reasons = []
     for m in [meal] if meal else planner.prefs["meals"]:
         entry = planner.plan.get(day, {}).get(m)
-        if entry and recipe["id"] in (entry["main"], entry["side"]):
+        if entry and recipe["id"] in tools.meal_dishes(entry):
             return True, m, recipe  # it's already there
         if m not in recipe["meals"]:
             reasons.append(f"{recipe['name']} לא מתאימה ל{'צהריים' if m == 'lunch' else 'ערב'}")
@@ -670,6 +733,30 @@ def put_dish(planner, day, meal, name, role=None):
         if result.get("ok"):
             return True, m, recipe
         planner.plan, planner.available = before
+        reasons.append(why_not(result.get("error", "")))
+    return False, None, list(dict.fromkeys(reasons))
+
+
+def add_dish(planner, day, meal, name):
+    """The user asked for a dish IN ADDITION to what a meal has ("a salad too"): it joins
+    the meal as an extra dish. With no meal named, the day's meals are tried in order.
+    Returns (True, meal, recipe) or (False, None, the reasons in Hebrew). The caller saves."""
+    recipe = find_dish(planner, name)
+    if recipe is None:
+        return False, None, [f"אין במתכונים מנה בשם \"{name}\""]
+    reasons = []
+    for m in [meal] if meal else planner.prefs["meals"]:
+        entry = planner.plan.get(day, {}).get(m)
+        if entry is None:
+            reasons.append(f"אין ארוחה מתוכננת ב{'צהריים' if m == 'lunch' else 'ערב'}")
+            continue
+        targets, planner.change_targets = planner.change_targets, {(day, m)}
+        try:
+            result = planner.add_extra(day, m, recipe["id"], user_asked=True)
+        finally:
+            planner.change_targets = targets
+        if result.get("ok"):
+            return True, m, recipe
         reasons.append(why_not(result.get("error", "")))
     return False, None, list(dict.fromkeys(reasons))
 

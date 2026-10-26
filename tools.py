@@ -45,6 +45,13 @@ def word_in(word, text):
     return len(stem) >= 2 and any(_stem(token).startswith(stem) for token in text.split())
 
 
+def meal_dishes(entry):
+    """Every dish of a planned meal: its main, its side, and any extra dish added to it
+    ("a salad too"). Most rules look at all of them."""
+    side = [entry["side"]] if entry.get("side") is not None else []
+    return [entry["main"]] + side + list(entry.get("extras", []))
+
+
 class DataError(Exception):
     """A data file is missing or malformed. The message is shown to the user."""
 
@@ -282,6 +289,10 @@ class MealPlanner:
         # Never set for the AI.
         self.relax = 0
 
+        # How the family rated each dish after eating it: {recipe id: likes minus dislikes}
+        # (see household.rate_meal). The AI prefers what they liked.
+        self.ratings = {}
+
         # Set when the AI decides the request needs no change (report_no_change).
         self.no_change_reason = None
 
@@ -407,23 +418,27 @@ class MealPlanner:
         word = recipe["name"].split()[0]
         return {"פשטידת": "פשטידה", "חביתת": "חביתה"}.get(word, word)
 
-    def _families(self, main_id, side_id):
-        """The kinds of dish in a meal: its main's, and its side's when that is a main dish
-        served as a side (soup instead of the rice)."""
-        ids = [main_id] + ([side_id] if side_id is not None and self.recipes[side_id]["dish_type"] == "main" else [])
+    def _families(self, ids):
+        """The kinds of dish in a meal (ids: main first): its main's, and any other dish's
+        that is a main dish itself (soup instead of the rice, or added next to it)."""
+        ids = [ids[0]] + [i for i in ids[1:] if self.recipes[i]["dish_type"] == "main"]
         return {self.dish_family(self.recipes[i]): self.recipes[i]["name"] for i in ids}
 
-    def same_day_clash(self, day, meal, main_id, side_id):
-        """The other meal that day has the same kind of main, or the same side: why, or None."""
+    def same_day_clash(self, day, meal, main_id, side_id, extra_ids=()):
+        """The other meal that day has the same kind of main, or the same side: why, or None.
+        extra_ids: this meal's extra dishes, if it has any."""
         other = self.plan.get(day, {}).get("dinner" if meal == "lunch" else "lunch")
         if other is None:
             return None
-        theirs = self._families(other["main"], other["side"])
-        same = [name for family, name in theirs.items() if family in self._families(main_id, side_id)]
+        ours = [main_id] + ([side_id] if side_id is not None else []) + list(extra_ids)
+        theirs = meal_dishes(other)
+        mine = self._families(ours)
+        same = [name for family, name in self._families(theirs).items() if family in mine]
         if same:
             return f"the other meal of {day} is already {same[0]}: not the same kind of dish twice a day"
-        if side_id is not None and side_id == other["side"]:
-            return f"the other meal of {day} already has {self.recipes[side_id]['name']} as its side"
+        shared = [i for i in ours[1:] if i in theirs[1:]]
+        if shared:
+            return f"the other meal of {day} already has {self.recipes[shared[0]]['name']} next to it"
         return None
 
     def _uses_expiring(self, recipe):
@@ -535,9 +550,10 @@ class MealPlanner:
 
     # ----- Tool: check_kosher -----
 
-    def check_kosher(self, main_id, side_id=None, day=None, meal=None):
-        """Is main + side kosher together, and (if day/meal given) with the rest of that day?"""
-        dish_ids = [i for i in (main_id, side_id) if i is not None]
+    def check_kosher(self, main_id, side_id=None, day=None, meal=None, extra_ids=()):
+        """Is main + side kosher together, and (if day/meal given) with the rest of that day?
+        extra_ids: the meal's extra dishes, if it has any."""
+        dish_ids = [i for i in (main_id, side_id, *extra_ids) if i is not None]
         unknown = [i for i in dish_ids if i not in self.recipes]
         if unknown:
             return {"error": f"no recipe with id {unknown}"}
@@ -567,7 +583,7 @@ class MealPlanner:
                 other_meal = "dinner" if meal == "lunch" else "lunch"
                 other = self.plan.get(day, {}).get(other_meal)
                 if other:
-                    other_type = self.meal_kosher_type([other["main"], other["side"]] if other["side"] else [other["main"]])
+                    other_type = self.meal_kosher_type(meal_dishes(other))
                     lunch_type, dinner_type = (meal_type, other_type) if meal == "lunch" else (other_type, meal_type)
                     if lunch_type == "meat" and dinner_type == "dairy":
                         problems.append(f"{day}: dairy dinner after a meat lunch")
@@ -673,9 +689,8 @@ class MealPlanner:
         used = Counter()
         for meals in self.plan.values():
             for entry in meals.values():
-                used[entry["main"]] += 1
-                if entry["side"] is not None:
-                    used[entry["side"]] += 1
+                for dish_id in meal_dishes(entry):
+                    used[dish_id] += 1
         return used
 
     def empty_slots(self):
@@ -696,9 +711,7 @@ class MealPlanner:
             if entry is None:
                 continue
             dishes = []
-            for dish_id in (entry["main"], entry["side"]):
-                if dish_id is None:
-                    continue
+            for dish_id in meal_dishes(entry):
                 r = self.recipes[dish_id]
                 dishes.append({
                     "name": r["name"],
@@ -805,11 +818,16 @@ class MealPlanner:
                       "to_buy": len(self._missing(m, people)), "sides": fitting_sides}
             if self._uses_expiring(m):
                 option["uses_expiring_soon"] = self._uses_expiring(m)
+            if self.ratings.get(m["id"]):
+                option["liked"] = self.ratings[m["id"]]  # > 0: the family liked it; < 0: they didn't
             options.append(option)
         options.sort(key=lambda o: o["to_buy"])
 
         result = {"day": day, "meal": meal, "people": people, "count": len(options),
                   "side_names": side_names, "options": options}
+        side_likes = {i: self.ratings[i] for i in side_names if self.ratings.get(i)}
+        if side_likes:
+            result["side_liked"] = side_likes
         if not options:
             result["hint"] = ("No valid option for this slot. Consider changing the other meal that day "
                               "(remove_meal), or an earlier meal that used up the dishes this slot needs. "
@@ -942,6 +960,8 @@ class MealPlanner:
         result = self.add_meal_to_plan(day, meal, old["main"], side_id, old["people"],
                                        user_asked=user_asked or old.get("chosen", False))
         if result.get("ok"):
+            result = self._readd_extras(day, meal, old) or result
+        if result.get("ok"):
             self._keep_notes(day, meal, old)
             return {**result, "side_before": self.recipes[old["side"]]["name"] if old["side"] else None}
         self.plan, self.available = before
@@ -998,6 +1018,8 @@ class MealPlanner:
         self.remove_meal(day, meal)
         result = self.add_meal_to_plan(day, meal, old["main"], old["side"], people, user_asked=old.get("chosen", False))
         if result.get("ok"):
+            result = self._readd_extras(day, meal, old) or result
+        if result.get("ok"):
             self._keep_notes(day, meal, old)
             return {"ok": True, "day": day, "meal": meal, "kept": f"{result['main']} + {result['side']}",
                     "people_before": old["people"], "people": people, "to_buy": result["to_buy"]}
@@ -1008,10 +1030,88 @@ class MealPlanner:
                 "hint": "Choose a different dish: remove_meal, then find_meal_options with the new people, "
                         "then add_meal_to_plan."}
 
+    # ----- Extra dishes: more than a main and a side -----
+
+    def add_extra(self, day, meal, dish_id, user_asked=False, reason=None):
+        """Another dish in a planned meal, next to its main and side (the user asks for a
+        salad too). Every rule is checked for the whole meal, and its ingredients are taken
+        from home or added to the shopping. Used for what the user asks for."""
+        error = self._slot_error(day, meal)
+        if error:
+            return {"error": error}
+        locked = self._locked_error(day, meal)
+        if locked:
+            return locked
+        entry = self.plan.get(day, {}).get(meal)
+        if entry is None:
+            return {"error": f"nothing is planned for {day} {meal}"}
+        recipe = self.recipes.get(dish_id)
+        if recipe is None:
+            return {"error": f"no recipe with id {dish_id}"}
+        if dish_id in meal_dishes(entry):
+            return {"error": f"'{recipe['name']}' is already in this meal"}
+        if meal not in recipe["meals"]:
+            return {"error": f"'{recipe['name']}' is not suitable for {meal}"}
+        if self.avoided_ingredients(recipe):
+            return {"error": f"'{recipe['name']}' contains {self.avoided_ingredients(recipe)}, which the family doesn't eat"}
+        extras = list(entry.get("extras", [])) + [dish_id]
+        kosher = self.check_kosher(entry["main"], entry["side"], day, meal, extra_ids=extras)
+        if not kosher["ok"]:
+            return {"error": "not kosher: " + "; ".join(kosher["problems"])}
+        broken = self.broken_wishes(day, meal, [entry["main"], entry["side"], *extras])
+        if broken:
+            return {"error": f"this meal goes against the family's wish: {broken}"}
+        clash = self.same_day_clash(day, meal, entry["main"], entry["side"], extras)
+        if clash:
+            return {"error": clash}
+
+        reserved, to_buy, _ = self.allocate([recipe], entry["people"], self.day_date(day))
+        for name, qty in reserved.items():
+            self.available[name]["quantity"] -= qty
+            entry["reserved"][name] = entry["reserved"].get(name, 0) + qty
+        for name, qty in to_buy.items():
+            entry["to_buy"][name] = entry["to_buy"].get(name, 0) + qty
+        entry["extras"] = extras
+        return {"ok": True, "day": day, "meal": meal, "added": recipe["name"],
+                "to_buy": [{"name": n, "quantity": q, "unit": self.units[n]} for n, q in to_buy.items()]}
+
+    def remove_extra(self, day, meal, dish_id):
+        """Take an extra dish out of a meal: the meal is built again without it, so what
+        it took from home is free again and its shopping is gone."""
+        entry = self.plan.get(day, {}).get(meal)
+        if entry is None or dish_id not in entry.get("extras", []):
+            return {"error": "this dish isn't an extra of the meal"}
+        before = copy.deepcopy((self.plan, self.available))
+        old = copy.deepcopy(entry)
+        old["extras"].remove(dish_id)
+        targets, self.change_targets = self.change_targets, {(day, meal)}
+        try:
+            self.remove_meal(day, meal)
+            result = self.add_meal_to_plan(day, meal, old["main"], old["side"], old["people"],
+                                           user_asked=old.get("chosen", True))
+            if result.get("ok"):
+                result = self._readd_extras(day, meal, old) or result
+        finally:
+            self.change_targets = targets
+        if not result.get("ok"):
+            self.plan, self.available = before
+            return result
+        self._keep_notes(day, meal, old)
+        return {"ok": True}
+
+    def _readd_extras(self, day, meal, old):
+        """After a meal was built again (other side, other people...), its extra dishes
+        come back. Returns the error if one doesn't fit any more, else None."""
+        for dish_id in old.get("extras", []):
+            result = self.add_extra(day, meal, dish_id, user_asked=True)
+            if not result.get("ok"):
+                return result
+        return None
+
     def _keep_notes(self, day, meal, old):
         """The user's changes to the dishes that are still in the meal stay with it."""
         entry = self.plan[day][meal]
-        kept = (entry["main"], entry["side"])
+        kept = meal_dishes(entry)
         notes = [n for n in old.get("notes", []) if n["dish"] in kept]
         if notes:
             entry["notes"] = notes
@@ -1055,9 +1155,7 @@ class MealPlanner:
                 entry = self.plan.get(day, {}).get(meal)
                 if entry is None:
                     continue
-                for dish_id in (entry["main"], entry["side"]):
-                    if dish_id is None:
-                        continue
+                for dish_id in meal_dishes(entry):
                     r = self.recipes[dish_id]
                     names = [i["name"] for i in r["ingredients"] if ingredient in i["name"]]
                     if names:
@@ -1075,7 +1173,7 @@ class MealPlanner:
                 entry = self.plan.get(day, {}).get(meal)
                 if entry is None:
                     continue
-                ids = [entry["main"]] + ([entry["side"]] if entry["side"] else [])
+                ids = meal_dishes(entry)
                 item = {
                     "day": day,
                     "meal": meal,
@@ -1085,6 +1183,8 @@ class MealPlanner:
                     "people": entry["people"],
                     "to_buy_items": len(entry["to_buy"]),
                 }
+                if entry.get("extras"):  # dishes the user added next to the main and side
+                    item["extras"] = [self.recipes[i]["name"] for i in entry["extras"]]
                 # Planned before the allergy was added to the preferences.
                 avoided = list(dict.fromkeys(n for i in ids for n in self.avoided_ingredients(self.recipes[i])))
                 if avoided:

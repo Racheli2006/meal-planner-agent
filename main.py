@@ -35,7 +35,9 @@ def load_planner(today):
     recipes = tools.load_recipes()
     pantry = tools.load_pantry(recipes["ingredient_units"])
     prefs = tools.load_preferences()
-    return recipes, tools.MealPlanner(recipes, pantry, prefs, today=today)
+    planner = tools.MealPlanner(recipes, pantry, prefs, today=today)
+    planner.ratings = household.rating_scores()  # what the family liked, from past weeks too
+    return recipes, planner
 
 
 def load_saved_planner(today):
@@ -66,7 +68,8 @@ def menu_text(planner):
                 lines.append(f"   {MEAL_NAMES[meal]}: —")
                 continue
             guests = f", {item['people']} אנשים" if item["people"] != planner.prefs["people"] else ""
-            lines.append(f"   {MEAL_NAMES[meal]}: {item['main']} + {item['side']}"
+            extras = "".join(f" + {name}" for name in item.get("extras", []))
+            lines.append(f"   {MEAL_NAMES[meal]}: {item['main']} + {item['side']}{extras}"
                          f"  ({KOSHER_NAMES[item['meal_type']]}{guests})")
         lines.append("")
     return "\n".join(lines)
@@ -105,7 +108,7 @@ def changed_slots(planner, before):
     A meal taken out and put back the same is not a change, even if its shopping moved."""
     def what(entry):
         """What counts as the meal: its dishes and number of people."""
-        return entry and (entry["main"], entry["side"], entry["people"])
+        return entry and (entry["main"], entry["side"], tuple(entry.get("extras", [])), entry["people"])
 
     after = {(d, m): e for d, meals in planner.plan.items() for m, e in meals.items()}
     return [(day, meal, before.get((day, meal)), after.get((day, meal)))
@@ -119,8 +122,8 @@ def changes_text(planner, before):
         """One meal in words, for 'before' and 'after'."""
         if entry is None:
             return "ריק"
-        side = f" + {planner.recipes[entry['side']]['name']}" if entry["side"] else ""
-        return f"{planner.recipes[entry['main']]['name']}{side} ({entry['people']} אנשים)"
+        dishes = " + ".join(planner.recipes[i]["name"] for i in tools.meal_dishes(entry))
+        return f"{dishes} ({entry['people']} אנשים)"
 
     lines = []
     for day, meal, old, new in changed_slots(planner, before):

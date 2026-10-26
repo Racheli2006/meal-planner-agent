@@ -146,6 +146,20 @@ class DuringTheWeekTests(WebTestCase):
         names = {i["name"] for i in household.read_pantry()}
         self.assertTrue({s["name"] for s in shopping} <= names)
 
+    def test_rating_a_meal(self):
+        # The plan is from Monday; Monday lunch is today: it can be rated.
+        # Monday lunch: meatballs (1) + rice (10). Each dish gets its own rating.
+        answer = web.do_rate({"day": "שני", "meal": "lunch", "dish": 1, "rating": "up"})
+        self.assertIn("אהבתם את קציצות", answer["message"])
+        web.do_rate({"day": "שני", "meal": "lunch", "dish": 10, "rating": "down"})
+        [lunch] = [m for d in web.state()["days"] if d["name"] == "שני" for m in d["meals"] if m["meal"] == "lunch"]
+        meatballs, rice = lunch["recipes"]
+        self.assertEqual((meatballs["rating"], rice["rating"]), ("up", "down"))
+        self.assertEqual(meatballs["likes"], {"up": 1, "down": 0})
+        self.assertEqual(main_planner().ratings, {1: 1, 10: -1})  # the next planning knows it
+        with self.assertRaises(tools.DataError):
+            web.do_rate({"day": "שלישי", "meal": "lunch", "dish": 4, "rating": "up"})  # tomorrow: not eaten yet
+
     def test_bought_a_different_amount(self):
         item = max(web.state()["shopping"], key=lambda s: s["quantity"])  # e.g. meat in grams
         self.assertGreater(item["quantity"], 1)
@@ -311,10 +325,37 @@ class NamedDishTests(WebTestCase):
         web.do_put_dish(next(c for c in answer["choices"] if c["label"] == "סלט ביצים")["body"])
         self.assertEqual(tools.load_json(tools.PLAN_FILE)["plan"]["שלישי"]["lunch"]["side"], 13)
 
+    def test_add_in_addition_not_instead(self):
+        # Monday lunch: meatballs + rice. "Add an egg salad too": all three.
+        answer = self.ask({"kind": "dish", "dish": "סלט ביצים", "day": "שני", "meal": "lunch", "add": True})
+        self.assertIn("בנוסף ל", answer["message"])
+        entry = tools.load_json(tools.PLAN_FILE)["plan"]["שני"]["lunch"]
+        self.assertEqual((entry["main"], entry["side"], entry["extras"]), (1, 10, [13]))
+        [lunch] = [m for d in web.state()["days"] if d["name"] == "שני" for m in d["meals"] if m["meal"] == "lunch"]
+        self.assertEqual(lunch["extras"], [{"id": 13, "name": "סלט ביצים"}])
+        self.assertEqual(len(lunch["recipes"]), 3)                       # its recipe is there too
+        web.do_remove_extra({"day": "שני", "meal": "lunch", "dish": 13})
+        self.assertNotIn("extras", tools.load_json(tools.PLAN_FILE)["plan"]["שני"]["lunch"])
+
+    def test_an_added_main_dish_is_shown_like_a_side(self):
+        # Meat in the oven is a main dish in the book; added next to the meatballs it isn't the main.
+        answer = self.ask({"kind": "dish", "dish": "בשר בתנור", "day": "שני", "meal": "lunch", "add": True})
+        self.assertNotIn("מנה עיקרית", answer["message"])
+        [lunch] = [m for d in web.state()["days"] if d["name"] == "שני" for m in d["meals"] if m["meal"] == "lunch"]
+        self.assertEqual(lunch["main"], "קציצות")                          # the main is still the main
+        self.assertEqual(lunch["extras"], [{"id": 6, "name": "בשר בתנור"}])  # no "main" mark
+
+    def test_cant_add_says_why(self):
+        with self.assertRaises(tools.DataError) as e:   # a dairy salad next to meatballs
+            self.ask({"kind": "dish", "dish": "סלט חלבי", "day": "שני", "meal": "lunch", "add": True})
+        self.assertTrue(str(e.exception).startswith('לא ניתן להוסיף "סלט חלבי"'))
+        self.assertIn(", כי זה לא יוצא כשר", str(e.exception))
+        self.assertNotIn("לא הצלחתי", str(e.exception))
+
     def test_same_side_twice_a_day_says_why(self):
         with self.assertRaises(tools.DataError) as e:  # Tuesday dinner already has the tomato salad
             self.ask({"kind": "dish", "dish": "סלט עגבניות", "day": "שלישי", "meal": "lunch"})
-        self.assertIn("פעמיים באותו יום", str(e.exception))
+        self.assertIn("כבר יש סלט עגבניות", str(e.exception))
 
     def test_no_meal_named_tries_the_day(self):
         answer = self.ask({"kind": "dish", "dish": "חביתה", "day": "שלישי", "meal": None})
@@ -622,6 +663,12 @@ class ServerTests(WebTestCase):
         status, body = self.request("/api/change", {"request": ""})
         self.assertEqual(status, 400)
         self.assertIn("צריך לכתוב", body["error"])
+
+
+def main_planner():
+    """A planner loaded the way every planning run loads it."""
+    import main
+    return main.load_planner(MONDAY)[1]
 
 
 if __name__ == "__main__":

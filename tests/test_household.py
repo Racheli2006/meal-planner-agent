@@ -374,6 +374,111 @@ class ChangeSummaryTests(unittest.TestCase):
         self.assertEqual(self.main.change_summary(self.q, self.before, "החלפתי לדג"), "החלפתי לדג")
 
 
+class RatingTests(unittest.TestCase):
+    """👍 / 👎 after eating: kept across weeks, and the planner prefers what was liked."""
+
+    def setUp(self):
+        self.path = pantry_file(EGGS_AND_RICE)
+        self.ratings = self.path.parent / "ratings.json"
+        p = planner_from(self.path, max_missing_per_dish=2)
+        self.assertTrue(p.add_meal_to_plan("ראשון", "dinner", 3, 10)["ok"])   # shakshuka + rice, Sunday
+        self.assertTrue(p.add_meal_to_plan("שלישי", "lunch", 1, 12)["ok"])    # Tuesday: still to come
+        self.q = reopen(p, self.path)                                         # Monday
+
+    def test_each_dish_on_its_own(self):
+        # Sunday dinner: shakshuka (3) + rice (10). They liked the shakshuka, not the rice.
+        household.rate_dish(self.q, "ראשון", "dinner", 3, "up", self.ratings)
+        household.rate_dish(self.q, "ראשון", "dinner", 10, "down", self.ratings)
+        self.assertEqual(household.read_ratings(self.ratings), {3: {"up": 1, "down": 0}, 10: {"up": 0, "down": 1}})
+        self.assertEqual(self.q.plan["ראשון"]["dinner"]["ratings"], {"3": "up", "10": "down"})
+        self.assertEqual(self.q.ratings, {3: 1, 10: -1})
+
+    def test_change_your_mind(self):
+        household.rate_dish(self.q, "ראשון", "dinner", 3, "up", self.ratings)
+        household.rate_dish(self.q, "ראשון", "dinner", 3, "down", self.ratings)   # replaces, doesn't add
+        self.assertEqual(household.read_ratings(self.ratings)[3], {"up": 0, "down": 1})
+        household.rate_dish(self.q, "ראשון", "dinner", 3, None, self.ratings)     # taken back
+        self.assertEqual(household.read_ratings(self.ratings), {})
+        self.assertNotIn("ratings", self.q.plan["ראשון"]["dinner"])
+
+    def test_only_after_eating(self):
+        with self.assertRaises(tools.DataError):
+            household.rate_dish(self.q, "שלישי", "lunch", 1, "up", self.ratings)     # tomorrow
+        with self.assertRaises(tools.DataError):
+            household.rate_dish(self.q, "ראשון", "dinner", 3, "great", self.ratings)
+        with self.assertRaises(tools.DataError):
+            household.rate_dish(self.q, "ראשון", "dinner", 4, "up", self.ratings)    # not in that meal
+
+    def test_the_agent_sees_what_was_liked(self):
+        self.q.ratings = {2: 2, 4: -1}
+        options = {o["main_id"]: o for o in self.q.find_meal_options("רביעי", "lunch")["options"]}
+        self.assertEqual(options[2].get("liked"), 2)
+        self.assertEqual(options[4].get("liked"), -1)
+
+    def test_the_program_prefers_liked_and_avoids_disliked(self):
+        options = [{"main_id": 3, "to_buy": 0, "sides": [[10, 0]]},
+                   {"main_id": 4, "to_buy": 0, "sides": [[10, 0]]}]
+        q = self.q
+        q.plan = {}  # nothing used yet this week
+        q.ratings = {3: -1}
+        self.assertEqual(household._best_choice(q, options)[0], 4)   # not the disliked one
+        q.ratings = {3: 1}
+        self.assertEqual(household._best_choice(q, options)[0], 3)   # the liked one
+
+
+class ExtraDishTests(unittest.TestCase):
+    """A dish IN ADDITION to the main and side ("a salad too")."""
+
+    def setUp(self):
+        self.path = pantry_file(EGGS_AND_RICE)
+        p = planner_from(self.path, max_missing_per_dish=2)
+        self.assertTrue(p.add_meal_to_plan("שלישי", "lunch", 1, 10)["ok"])   # meatballs + rice
+        self.q = reopen(p, self.path)
+        self.q.change_targets = {("שלישי", "lunch")}
+
+    def test_added_next_to_the_meal(self):
+        result = self.q.add_extra("שלישי", "lunch", 12, user_asked=True)     # tomato salad too
+        self.assertTrue(result["ok"])
+        entry = self.q.plan["שלישי"]["lunch"]
+        self.assertEqual(tools.meal_dishes(entry), [1, 10, 12])
+        self.assertEqual(entry["reserved"].get("עגבניות"), None)  # no tomatoes at home: bought
+        self.assertEqual(entry["to_buy"]["עגבניות"], 1)          # 2 for 4 people -> 1 for 2
+
+    def test_a_dairy_dish_cant_join_a_meat_meal(self):
+        result = self.q.add_extra("שלישי", "lunch", 11, user_asked=True)     # dairy salad + meatballs
+        self.assertIn("not kosher", result["error"])
+        self.assertEqual(household.why_not(result["error"])[:10], "זה לא יוצא")
+        self.assertNotIn("extras", self.q.plan["שלישי"]["lunch"])
+
+    def test_already_in_the_meal(self):
+        self.assertIn("already in this meal", self.q.add_extra("שלישי", "lunch", 10, user_asked=True)["error"])
+
+    def test_extras_stay_when_people_change_and_can_be_removed(self):
+        self.q.add_extra("שלישי", "lunch", 12, user_asked=True)
+        self.assertTrue(self.q.change_people("שלישי", "lunch", 4)["ok"])
+        entry = self.q.plan["שלישי"]["lunch"]
+        self.assertEqual(entry["extras"], [12])
+        self.assertEqual(entry["to_buy"]["עגבניות"], 2)          # the salad for 4 now
+        self.assertTrue(self.q.remove_extra("שלישי", "lunch", 12)["ok"])
+        self.assertEqual(tools.meal_dishes(self.q.plan["שלישי"]["lunch"]), [1, 10])
+        self.assertNotIn("עגבניות", self.q.plan["שלישי"]["lunch"]["to_buy"])
+
+    def test_extras_count_in_the_recount_and_the_day_rules(self):
+        self.q.add_extra("שלישי", "lunch", 12, user_asked=True)
+        household.reallocate(self.q, tools.load_pantry(UNITS, self.path))
+        self.assertEqual(self.q.plan["שלישי"]["lunch"]["to_buy"]["עגבניות"], 1)  # still counted
+        # The same salad at dinner the same day: not twice a day.
+        self.q.change_targets = {("שלישי", "dinner")}
+        self.assertIn("other meal", self.q.add_meal_to_plan("שלישי", "dinner", 4, 12)["error"])
+
+    def test_add_dish_by_name(self):
+        ok, meal, recipe = household.add_dish(self.q, "שלישי", None, "סלט עגבניות")
+        self.assertEqual((ok, meal, recipe["id"]), (True, "lunch", 12))
+        ok, _, reasons = household.add_dish(self.q, "שלישי", "lunch", "סלט חלבי")
+        self.assertFalse(ok)
+        self.assertIn("כשר", reasons[0])
+
+
 class EdgeCaseTests(unittest.TestCase):
     """One test per bug found in review, so none of them comes back."""
 

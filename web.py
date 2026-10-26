@@ -43,10 +43,13 @@ def meal_view(planner, day, meal):
     view = {"meal": meal, "label": main.MEAL_NAMES[meal]}
     if entry is None:
         return {**view, "empty": True}
-    ids = [entry["main"]] + ([entry["side"]] if entry["side"] else [])
+    ids = tools.meal_dishes(entry)
     return {**view,
             "main": planner.recipes[entry["main"]]["name"],
             "side": planner.recipes[entry["side"]]["name"] if entry["side"] else None,
+            # Dishes added next to the main and side ("a salad too"), shown like sides: only the
+            # meal's main dish is big, whatever kind of dish an added one is in the recipe book.
+            "extras": [{"id": i, "name": planner.recipes[i]["name"]} for i in entry.get("extras", [])],
             "kosher": planner.meal_kosher_type(ids),
             "people": entry["people"],
             "to_buy": [main.amount(q, planner.units[n]) + " " + n for n, q in entry["to_buy"].items()],
@@ -60,14 +63,16 @@ def recipe_view(planner, entry, dish_id):
     r = planner.recipes[dish_id]
     steps, added, removed = household.meal_recipe(planner, entry, dish_id)
     notes = [n["text"] for n in entry.get("notes", []) if n["dish"] == dish_id]
-    return {"name": r["name"], "minutes": r["prep_minutes"], "servings": r["servings"],
+    return {"id": dish_id, "name": r["name"], "minutes": r["prep_minutes"], "servings": r["servings"],
+            "rating": entry.get("ratings", {}).get(str(dish_id)),  # this meal's 👍 / 👎 for the dish
             "ingredients": [{"text": f"{i['name']} {main.amount(i['quantity'], i['unit'])}",
                              "removed": i["name"] in removed}
                             for i in planner.scaled_ingredients(r, entry["people"])]
                            + [{"text": a, "added": True} for a in added],
             "steps": steps,
             # The changes asked for; when the recipe couldn't be rewritten, they're shown as steps.
-            "notes": notes, "rewritten": str(dish_id) in entry.get("custom", {})}
+            "notes": notes, "rewritten": str(dish_id) in entry.get("custom", {}),
+            "likes": household.read_ratings().get(dish_id, {"up": 0, "down": 0})}
 
 
 def state():
@@ -218,8 +223,9 @@ def put_named_dish(planner, intent):
         day, meal = found_at
     if planner.is_past(day):
         raise tools.DataError(f"יום {day} כבר עבר, אז אי אפשר לשנות אותו.")
+    add = bool(intent.get("add"))  # "a salad too": next to what's there, not instead of it
     if household.find_dish(planner, name) is None:
-        target = {"day": day, "meal": meal}
+        target = {"day": day, "meal": meal, "add": add}
         where = f"ל{main.MEAL_NAMES[meal]} ביום {day}" if meal else f"ליום {day}"
         choices = [{"label": f"ליצור מתכון חדש: {name}", "path": "/api/put-dish",
                     "body": {**target, "dish": name, "create": True, "dish_type": intent.get("dish_type")}}]
@@ -232,18 +238,21 @@ def put_named_dish(planner, intent):
     # A name that fits several recipes ("מרק"): the user picks among those that can go there.
     named = household.dishes_named(planner, name)
     if len(named) > 1 and named[0]["name"] != name:
-        target = {"day": day, "meal": meal, "role": role}
+        target = {"day": day, "meal": meal, "role": role, "add": add}
         usage = planner.dish_usage()  # dishes not on the menu yet this week come first
+        trial = household.add_dish if add else (lambda p, d, m, n: household.put_dish(p, d, m, n, role))
         fits = [r["name"] for r in sorted(named, key=lambda r: usage[r["id"]] > 0)
-                if household.put_dish(copy.deepcopy(planner), day, meal, r["name"], role)[0]]
+                if trial(copy.deepcopy(planner), day, meal, r["name"])[0]]
         if len(fits) > 1:
             return {"message": f"יש כמה מנות בשם \"{name}\" שמתאימות. איזו לשים?",
                     "choices": [{"label": n, "path": "/api/put-dish", "body": {**target, "dish": n}} for n in fits]}
         if fits:
             name = fits[0]
+    if add:
+        return add_named_dish(planner, day, meal, name, before)
     ok, meal, found = household.put_dish(planner, day, meal, name, role)
     if not ok:
-        raise tools.DataError(f"לא הצלחתי לשים \"{name}\" ביום {day}: {'; '.join(found)}.")
+        raise tools.DataError(f"לא ניתן לשים \"{name}\" ביום {day}, כי {' וגם '.join(found)}.")
     if not main.changed_slots(planner, before) and before == {(d, m): dict(e) for d, meals in planner.plan.items()
                                                               for m, e in meals.items()}:
         return {"message": f"{found['name']} כבר מתוכנן ביום {day} ב{main.MEAL_NAMES[meal]}."}
@@ -260,6 +269,32 @@ def put_named_dish(planner, intent):
             {"label": other, "path": "/api/put-dish", "body": {"dish": other, "day": day, "meal": meal}}
             for other in others]
     return answer
+
+
+def add_named_dish(planner, day, meal, name, before):
+    """'A salad too': the dish joins the meal next to what it has, or the reason it can't."""
+    asked_meal = meal
+    ok, meal, found = household.add_dish(planner, day, meal, name)
+    if not ok:
+        where = f"ל{main.MEAL_NAMES[asked_meal]} ביום {day}" if asked_meal else f"ליום {day}"
+        raise tools.DataError(f"לא ניתן להוסיף \"{name}\" {where}, כי {' וגם '.join(found)}.")
+    main.save_outputs(planner)
+    entry = planner.plan[day][meal]
+    there = " + ".join(planner.recipes[i]["name"] for i in tools.meal_dishes(entry) if i != found["id"])
+    return with_review(f"הוספתי {found['name']} ל{main.MEAL_NAMES[meal]} ביום {day}, בנוסף ל{there}.\n\n"
+                       f"{main.changes_text(planner, before)}")
+
+
+def do_remove_extra(body):
+    """Take an extra dish out of a meal (the × next to it)."""
+    day, meal = slot(body)
+    dish = body.get("dish")
+    planner = main.load_saved_planner(today())
+    result = planner.remove_extra(day, meal, dish)
+    if not result.get("ok"):
+        raise tools.DataError(f"לא ניתן להוריד את המנה, כי {household.why_not(result.get('error', ''))}.")
+    main.save_outputs(planner)
+    return with_review(f"הורדתי את {planner.recipes[dish]['name']} מה{main.MEAL_NAMES[meal]} של יום {day}.")
 
 
 def put_meal_note(planner, intent):
@@ -287,8 +322,8 @@ def put_meal_note(planner, intent):
     if entry is None or planner.is_past(day):
         raise tools.DataError("אפשר להוסיף הערה רק לארוחה מתוכננת ביום שעוד לא עבר.")
     # The dish it's about: the one named, or the main.
-    dish_id = next((i for i in (entry["main"], entry["side"])
-                    if i is not None and dish and tools.word_in(dish, planner.recipes[i]["name"])), entry["main"])
+    dish_id = next((i for i in tools.meal_dishes(entry)
+                    if dish and tools.word_in(dish, planner.recipes[i]["name"])), entry["main"])
     # The AI writes the change into this meal's recipe; if that fails, it's shown as a last step.
     view = recipe_view(planner, entry, dish_id)
     try:
@@ -349,12 +384,13 @@ def do_put_dish(body):
         recipes = tools.load_recipes()
         recipe = agent.create_recipe(name, body.get("dish_type"), recipes)
         if recipe is None:
-            raise tools.DataError(f"לא הצלחתי לכתוב מתכון ל\"{name}\" מהמצרכים שהתוכנית מכירה.")
+            raise tools.DataError(f"לא ניתן ליצור מתכון ל\"{name}\", כי האגנט לא הצליח לכתוב מתכון תקין למנה הזאת.")
         household.add_recipe(recipe)
         name = recipe["name"]
     planner = main.load_saved_planner(today())  # loaded again: the recipe book may be new
     role = body.get("role") if body.get("role") in ("main", "side") else None
-    answer = put_named_dish(planner, {"dish": name, "day": day, "meal": meal, "role": role})
+    answer = put_named_dish(planner, {"dish": name, "day": day, "meal": meal, "role": role,
+                                      "add": bool(body.get("add"))})
     if body.get("create"):
         answer["message"] = f"הוספתי למתכונים: {name}.\n\n{answer['message']}"
     return answer
@@ -420,6 +456,24 @@ def do_guests(body):
     what = (f"המנות הקודמות לא מתאימות ל-{people} אנשים, אז בחרתי במקומן: {result['kept']}."
             if result.get("new_dishes") else f"עודכן ל-{people} אנשים.")
     return with_review(what + (f" צריך לקנות: {extra}." if extra else ""))
+
+
+def do_rate(body):
+    """How was it? 👍 or 👎 for one dish of a meal that was eaten (again: takes it back).
+    The agent prefers what the family liked from now on."""
+    day, meal = slot(body)
+    rating, dish = body.get("rating"), body.get("dish")
+    if not isinstance(dish, int):
+        raise tools.DataError("הבקשה לא תקינה.")
+    planner = main.load_saved_planner(today())
+    household.rate_dish(planner, day, meal, dish, rating)
+    main.save_outputs(planner)
+    names = planner.recipes[dish]["name"]
+    if rating == "up":
+        return {"message": f"👍 נשמר שאהבתם את {names}. האגנט יציע את זה יותר."}
+    if rating == "down":
+        return {"message": f"👎 נשמר שפחות אהבתם את {names}. האגנט יבחר את זה רק אם אין ברירה."}
+    return {"message": "הדירוג בוטל."}
 
 
 def do_skip(body):
@@ -624,6 +678,7 @@ ACTIONS = {
     "/api/pantry": do_pantry, "/api/purchase": do_purchase, "/api/new-week": do_new_week,
     "/api/avoid": do_avoid, "/api/family-notes": do_family_notes, "/api/settings": do_settings,
     "/api/put-dish": do_put_dish, "/api/recipe-note": do_recipe_note, "/api/meal-note": do_meal_note,
+    "/api/rate": do_rate, "/api/remove-extra": do_remove_extra,
 }
 
 

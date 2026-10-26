@@ -45,6 +45,11 @@ How you choose (this is your job; the rules are already handled):
 4. Variety: don't put similar dishes on consecutive days (e.g. pasta twice in a row),
    and spread the side dishes around.
 5. Think ahead: don't use up dishes that the remaining slots will need.
+6. What the family liked: an option's "liked" (and "side_liked" for sides) is how they
+   rated it after eating it before: above 0 they liked it, below 0 they didn't. Prefer
+   liked dishes, choose disliked ones only when nothing else fits, and when a rating
+   decides your choice, say so in the reason. Most dishes have no rating: an option
+   without "liked" was never rated, so never say it's liked or give it a number.
 If a slot has no options, think about which earlier choice blocks it (often the
 other meal of the same day) and change it with remove_meal, or report the slot.
 
@@ -160,7 +165,10 @@ Answer in JSON only, one of:
   "add steamed vegetables to the mujadara"): {{"kind": "dish", "dish": "<the dish's name as written,
   shortest form, e.g. פירה>", "dish_type": "main" | "side" | null, "day": "<day>" | null,
   "meal": "lunch" | "dinner" | null, "with_dish": "<a dish already on the menu they point to, e.g. מג'דרה>" | null,
-  "instead_of": "<the dish on the menu it should REPLACE, e.g. 'soup instead of the rice' -> אורז>" | null}}
+  "instead_of": "<the dish on the menu it should REPLACE, e.g. 'soup instead of the rice' -> אורז>" | null,
+  "add": true | false}}
+  "add" is true when they want it IN ADDITION to what the meal has ("תוסיף סלט", "גם סלט",
+  "בנוסף"), false when it should take a place ("במקום", "אני רוצה שניצל ביום רביעי").
   NEVER guess a day or a meal: use null unless the request says it (or says "tomorrow"/"today").
   A side dish is something served next to the main (rice, salad, mashed potatoes, vegetables).
 - A change to HOW a dish on the menu is cooked (add a spice, less salt, spicier, no onion in it):

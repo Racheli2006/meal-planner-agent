@@ -170,6 +170,7 @@ def interpret_request(request, days, today_name, client=None):
     if answer.get("kind") == "dish" and str(answer.get("dish") or "").strip() and (day or with_dish or instead_of):
         return {"kind": "dish", "dish": str(answer["dish"]).strip(), "day": day, "meal": meal,
                 "with_dish": with_dish, "instead_of": instead_of,
+                "add": answer.get("add") is True and not instead_of,  # "instead of" always takes a place
                 "dish_type": answer.get("dish_type") if answer.get("dish_type") in ("main", "side") else None}
     note = str(answer.get("note") or "").strip()
     dish = str(answer.get("dish") or "").strip() or None

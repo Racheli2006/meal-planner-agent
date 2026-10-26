@@ -90,6 +90,12 @@ textarea { width: 100%; resize: vertical; min-height: 2.6em; }
 .meal-note { font-size: .85rem; color: var(--accent); margin: 0; }
 .recipe li.removed { text-decoration: line-through; color: var(--muted); }
 .chip.added { background: var(--parve-bg); color: var(--parve); }
+.rate { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; font-size: .85rem; }
+.rate-row { display: flex; align-items: center; gap: 6px; }
+.rate-row span { flex: 1; }
+.extra { display: flex; align-items: center; gap: 4px; }
+.btn.chosen { background: var(--parve-bg); border-color: var(--accent); }
+.likes { font-size: .8rem; font-weight: 400; }
 .to-buy { font-size: .82rem; color: var(--warn); }
 .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .inline-form { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; padding: 8px; background: var(--soft); border-radius: 8px; font-size: .9rem; }
@@ -417,7 +423,8 @@ function mealView(d, m) {
   const people = m.people !== S.people ? ` · ${m.people} אנשים` : "";
   const open = openRecipes.has(key);
   const recipes = open ? `<div class="recipes">${m.recipes.map(r => `<div class="recipe">
-      <h4>${esc(r.name)} <span class="muted">· כ-${r.minutes} דקות</span></h4>
+      <h4>${esc(r.name)} <span class="muted">· כ-${r.minutes} דקות</span>${r.likes.up || r.likes.down
+        ? ` <span class="muted likes">${r.likes.up ? `👍 ${r.likes.up}` : ""} ${r.likes.down ? `👎 ${r.likes.down}` : ""}</span>` : ""}</h4>
       ${r.notes.length ? `<p class="meal-note">📝 עודכן לארוחה הזאת: ${esc(r.notes.join(", "))}</p>` : ""}
       <div class="recipe-label">מצרכים ל-${m.people} אנשים</div>
       <ul>${r.ingredients.map(i => `<li class="${i.removed ? "removed" : ""}">${esc(i.text)}${
@@ -431,6 +438,11 @@ function mealView(d, m) {
     <span class="meal-label"><span>${m.label}${people}</span><span class="pill ${m.kosher}">${KOSHER[m.kosher]}</span></span>
     <button class="dish-link main-dish" data-action="recipe" data-key="${esc(key)}" aria-expanded="${open}">${esc(m.main)}</button>
     ${m.side ? `<button class="dish-link side-dish" data-action="recipe" data-key="${esc(key)}" aria-expanded="${open}">+ ${esc(m.side)}</button>` : ""}
+    ${m.extras.map(x => `<span class="extra">
+      <button class="dish-link side-dish" data-action="recipe" data-key="${esc(key)}"
+        aria-expanded="${open}">+ ${esc(x.name)}</button>
+      ${d.past ? "" : `<button class="close-chip" data-action="remove-extra" data-dish="${x.id}" ${attrs}
+        aria-label="להוריד את ${esc(x.name)}">×</button>`}</span>`).join("")}
     <button class="recipe-toggle" data-action="recipe" data-key="${esc(key)}">${open ? "▾ להסתיר את המתכון" : "▸ איך מכינים"}</button>
     ${recipes}
     ${m.notes.length ? `<span class="meal-note">📝 ${esc(m.notes.join(" · "))}</span>` : ""}
@@ -439,7 +451,15 @@ function mealView(d, m) {
       ${d.past ? "" : `<button class="btn small" data-action="open" data-form="guests:${esc(key)}">אורחים</button>
       <button class="btn small" data-action="replace" ${attrs}>להחליף מנה</button>`}
       <button class="btn small danger" data-action="open" data-form="skip:${esc(key)}">לא בישלנו</button>
-    </div>${form}
+    </div>
+    ${d.past || d.today ? `<div class="rate" role="group" aria-label="איך היה?">
+      <span class="muted">איך היה?</span>
+      ${m.recipes.map(r => `<div class="rate-row"><span>${esc(r.name)}</span>
+        <button class="btn small ${r.rating === "up" ? "chosen" : ""}" data-action="rate" data-rating="up" data-dish="${r.id}"
+          ${attrs} aria-pressed="${r.rating === "up"}" aria-label="אהבנו את ${esc(r.name)}">👍</button>
+        <button class="btn small ${r.rating === "down" ? "chosen" : ""}" data-action="rate" data-rating="down" data-dish="${r.id}"
+          ${attrs} aria-pressed="${r.rating === "down"}" aria-label="פחות אהבנו את ${esc(r.name)}">👎</button></div>`).join("")}
+    </div>` : ""}${form}
   </div>`;
 }
 
@@ -576,6 +596,15 @@ document.addEventListener("input", e => {
 const ACTIONS = {
   "close-message": () => { $("message").hidden = true; },
   "open": el => { openForm = el.dataset.form; render(); },
+  // 👍 / 👎 after eating; pressing the chosen one again takes it back.
+  "rate": el => {
+    const chosen = el.getAttribute("aria-pressed") === "true";
+    call("/api/rate", { day: el.dataset.day, meal: el.dataset.meal, dish: Number(el.dataset.dish),
+                        rating: chosen ? null : el.dataset.rating }, "שומר…");
+  },
+  // × next to a dish added to a meal.
+  "remove-extra": el => call("/api/remove-extra",
+    { day: el.dataset.day, meal: el.dataset.meal, dish: Number(el.dataset.dish) }, checking("מעדכן")),
   "recipe": el => {
     const key = el.dataset.key;
     openRecipes.has(key) ? openRecipes.delete(key) : openRecipes.add(key);
