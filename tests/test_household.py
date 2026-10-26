@@ -92,6 +92,31 @@ class WeekTests(unittest.TestCase):
         q.remove_meal("שלישי", "lunch")
         self.assertEqual(q.available["בשר טחון"]["quantity"], 250)
 
+    def test_bought_less_than_the_list(self):
+        # Meatballs need 250 g meat; only 100 g were in the shop.
+        bought = household.record_shopping(self.p, path=self.path, amounts={"בשר טחון": 100})
+        self.assertEqual(bought, {"בשר טחון": 100})
+        self.assertEqual(self.p.plan["שלישי"]["lunch"]["to_buy"], {"בשר טחון": 150})   # the rest stays on the list
+        self.assertEqual(self.p.plan["שלישי"]["lunch"]["reserved"]["בשר טחון"], 100)
+        self.assertEqual({i["name"]: i["quantity"] for i in household.read_pantry(self.path)}["בשר טחון"], 100)
+
+    def test_bought_more_than_the_list(self):
+        household.record_shopping(self.p, path=self.path, amounts={"בשר טחון": 500})
+        self.assertEqual(self.p.shopping_list(), [])
+        q = reopen(self.p, self.path)
+        self.assertEqual(q.available["בשר טחון"]["quantity"], 250)  # the extra is free at home
+
+    def test_less_goes_to_the_soonest_meal(self):
+        # No eggs at home: Monday's shakshuka needs 3, Tuesday's meatballs 1. Only 2 were bought.
+        path = pantry_file([{"name": "אורז", "quantity": 1000, "unit": "גרם", "expires": None},
+                            {"name": "עגבניות", "quantity": 5, "unit": "יחידה", "expires": None}])
+        p = planner_from(path, max_missing_per_dish=2)
+        self.assertTrue(p.add_meal_to_plan("שלישי", "lunch", 1, 10)["ok"])
+        self.assertTrue(p.add_meal_to_plan("שני", "dinner", 3, 10)["ok"])
+        household.record_shopping(p, path=path, amounts={"ביצים": 2})
+        self.assertEqual(p.plan["שני"]["dinner"]["to_buy"]["ביצים"], 1)    # Monday got the 2 eggs
+        self.assertEqual(p.plan["שלישי"]["lunch"]["to_buy"]["ביצים"], 1)   # Tuesday still needs its 1
+
     def test_only_ticked_items_are_bought(self):
         self.assertTrue(self.p.add_meal_to_plan("שלישי", "dinner", 3, 12)["ok"])  # shakshuka: buys tomatoes
         household.record_shopping(self.p, {"עגבניות"}, path=self.path)

@@ -123,11 +123,12 @@ tr.expired td { background: var(--bad-bg); }
 .close-chip { border: 0; background: none; color: inherit; font: inherit; font-weight: 700; cursor: pointer; padding: 0 2px; }
 
 .shop { list-style: none; margin: 0; padding: 0; }
-.shop li { border-bottom: 1px solid var(--line); }
-.shop label { display: flex; gap: 10px; align-items: center; padding: 9px 2px; cursor: pointer; }
-.shop input { width: 18px; height: 18px; accent-color: var(--accent); }
+.shop li { border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 8px; }
+.shop label { display: flex; gap: 10px; align-items: center; padding: 9px 2px; cursor: pointer; flex: 1; }
+.shop input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); }
 .shop .item { flex: 1; }
-.shop .qty { color: var(--muted); font-variant-numeric: tabular-nums; }
+.shop .qty-input { width: 5.5em; font-variant-numeric: tabular-nums; }
+.shop .qty { color: var(--muted); min-width: 3.5em; }
 
 .busy { position: fixed; inset: 0; background: color-mix(in srgb, var(--bg) 75%, transparent); display: grid; place-items: center; z-index: 50; }
 .busy .box { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 22px 28px; text-align: center; box-shadow: 0 8px 30px rgb(0 0 0 / .15); }
@@ -292,11 +293,20 @@ function render() {
   // Text typed but not sent yet survives the redraw.
   const typed = {};
   for (const id of ["request", "avoid-new", "note-new"]) if ($(id)) typed[id] = $(id).value;
+  // The shopping list's ticks and amounts too, by item (the rows can move).
+  const shop = {};
+  document.querySelectorAll(".shop input[type=checkbox]").forEach(box => {
+    shop[box.value] = { checked: box.checked, qty: $("q" + box.id.slice(1)).value };
+  });
   if (S.mode === "new_week") view.innerHTML = newWeekView();
   else if (tab === "pantry") view.innerHTML = pantryView();
   else if (tab === "shop") view.innerHTML = shopView();
   else view.innerHTML = weekView();
   for (const [id, value] of Object.entries(typed)) if ($(id)) $(id).value = value;
+  document.querySelectorAll(".shop input[type=checkbox]").forEach(box => {
+    const was = shop[box.value];
+    if (was) { box.checked = was.checked; $("q" + box.id.slice(1)).value = was.qty; }
+  });
 }
 
 // The 'important updates' panel: the household, foods never eaten, and standing wishes.
@@ -494,15 +504,27 @@ function shopView() {
   if (!S.shopping.length) return `<div class="panel"><h2>רשימת קניות</h2><p class="note">אין מה לקנות. כל מה שהתפריט צריך כבר בבית.</p></div>`;
   return `<div class="panel">
     <h2>רשימת קניות</h2>
-    <p class="note">מה שהתפריט צריך ואין בבית. סמני מה שקנית ולחצי "נקנה", והמוצרים יעברו למלאי.</p>
-    <ul class="shop">${S.shopping.map((s, i) => `<li><label for="b${i}">
-      <input type="checkbox" id="b${i}" value="${esc(s.name)}"><span class="item">${esc(s.name)}</span>
-      <span class="qty">${esc(amount(s.quantity, s.unit))}</span></label></li>`).join("")}</ul>
+    <p class="note">מה שהתפריט צריך ואין בבית. סמני מה שקנית ולחצי "נקנה", והמוצרים יעברו למלאי.
+      קנית כמות אחרת? משנים את המספר, והשאר נשאר ברשימה.</p>
+    <ul class="shop">${S.shopping.map((s, i) => `<li>
+      <label for="b${i}"><input type="checkbox" id="b${i}" value="${esc(s.name)}"><span class="item">${esc(s.name)}</span></label>
+      <input type="number" class="qty-input" id="q${i}" data-row="${i}" min="0" step="any" value="${s.quantity}"
+        aria-label="כמה קנית מ${esc(s.name)}">
+      <span class="qty">${esc(UNIT_SHORT[s.unit] || s.unit)}</span></li>`).join("")}</ul>
     <div class="row" style="margin-top:12px"><button class="btn primary" data-action="bought">נקנה (מה שסימנתי)</button>
     <button class="btn" data-action="bought-all">קניתי הכול</button>
     <button class="btn" data-action="copy-list">העתקת הרשימה</button></div>
     <textarea id="list-text" readonly hidden aria-label="רשימת הקניות כטקסט">${esc(shoppingText())}</textarea>
   </div>`;
+}
+
+// After buying: what's left on the list starts again unticked, with what's still needed.
+function resetShoppingRows() {
+  document.querySelectorAll(".shop input[type=checkbox]").forEach(box => {
+    const row = box.id.slice(1);
+    box.checked = false;
+    $("q" + row).value = S.shopping[row].quantity;
+  });
 }
 
 // The list as plain text, to paste in WhatsApp or a note.
@@ -537,6 +559,8 @@ function toItems(rows) {
 
 // Typing in a table: remember it (and that there are unsaved edits).
 document.addEventListener("input", e => {
+  // Changing an amount on the shopping list means that item was bought: tick it.
+  if (e.target.classList.contains("qty-input")) { $("b" + e.target.dataset.row).checked = true; return; }
   const { list, i, field } = e.target.dataset;
   if (!list) return;
   const rows = rowsFor(list);
@@ -574,12 +598,18 @@ const ACTIONS = {
   "skip": async el => {
     if (await call("/api/skip", { day: el.dataset.day, meal: el.dataset.meal }, "מעדכן…")) { openForm = null; render(); }
   },
+  // The ticked items, each with the amount in its box (what was really bought).
   "bought": () => {
-    const names = [...document.querySelectorAll(".shop input:checked")].map(i => i.value);
-    if (!names.length) return showMessage({ error: "לא סימנת שום מוצר." });
-    call("/api/bought", { names }, "מעדכן את המלאי…");
+    const items = [...document.querySelectorAll(".shop input[type=checkbox]:checked")].map(box => {
+      const row = box.id.slice(1);
+      return { name: box.value, quantity: Number($("q" + row).value) };
+    });
+    if (!items.length) return showMessage({ error: "לא סימנת שום מוצר." });
+    const bad = items.find(i => !(i.quantity > 0));
+    if (bad) return showMessage({ error: `כמה קנית מ${bad.name}? צריך מספר גדול מ-0.` });
+    call("/api/bought", { items }, "מעדכן את המלאי…").then(ok => { if (ok) resetShoppingRows(); });
   },
-  "bought-all": () => call("/api/bought", {}, "מעדכן את המלאי…"),
+  "bought-all": () => call("/api/bought", {}, "מעדכן את המלאי…").then(ok => { if (ok) resetShoppingRows(); }),
   "copy-list": async () => {
     try {
       await navigator.clipboard.writeText(shoppingText());

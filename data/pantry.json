@@ -2,28 +2,46 @@
   "last_updated": "2026-10-26",
   "items": [
     {
+      "name": "אורז",
+      "quantity": 575,
+      "unit": "גרם",
+      "expires": null
+    },
+    {
+      "name": "אפונה יבשה",
+      "quantity": 200,
+      "unit": "גרם",
+      "expires": null
+    },
+    {
+      "name": "בטטות",
+      "quantity": 3,
+      "unit": "יחידה",
+      "expires": null
+    },
+    {
       "name": "ביצים",
       "quantity": 6,
       "unit": "יחידה",
       "expires": "2026-11-12"
     },
     {
-      "name": "חלב",
-      "quantity": 1004,
-      "unit": "מ\"ל",
-      "expires": "2026-11-08"
+      "name": "בצל",
+      "quantity": 9,
+      "unit": "יחידה",
+      "expires": null
     },
     {
-      "name": "מלפפונים",
-      "quantity": 4,
+      "name": "בצל סגול",
+      "quantity": 2,
       "unit": "יחידה",
-      "expires": "2026-11-09"
+      "expires": null
     },
     {
-      "name": "עגבניות",
-      "quantity": 5,
-      "unit": "יחידה",
-      "expires": "2026-11-09"
+      "name": "בשר טחון",
+      "quantity": 500,
+      "unit": "גרם",
+      "expires": "2027-01-15"
     },
     {
       "name": "גבינה לבנה",
@@ -44,75 +62,9 @@
       "expires": "2026-11-20"
     },
     {
-      "name": "קוטג'",
-      "quantity": 250,
-      "unit": "גרם",
-      "expires": "2026-11-11"
-    },
-    {
-      "name": "פטריות",
-      "quantity": 250,
-      "unit": "גרם",
-      "expires": "2026-11-08"
-    },
-    {
-      "name": "בשר טחון",
-      "quantity": 500,
-      "unit": "גרם",
-      "expires": "2027-01-15"
-    },
-    {
-      "name": "פילה דג",
-      "quantity": 600,
-      "unit": "גרם",
-      "expires": "2027-01-20"
-    },
-    {
-      "name": "חצילים",
-      "quantity": 2,
-      "unit": "יחידה",
-      "expires": "2026-11-10"
-    },
-    {
-      "name": "בצל",
-      "quantity": 9,
-      "unit": "יחידה",
-      "expires": null
-    },
-    {
-      "name": "בצל סגול",
-      "quantity": 2,
-      "unit": "יחידה",
-      "expires": null
-    },
-    {
       "name": "גזר",
       "quantity": 5,
       "unit": "יחידה",
-      "expires": null
-    },
-    {
-      "name": "בטטות",
-      "quantity": 3,
-      "unit": "יחידה",
-      "expires": null
-    },
-    {
-      "name": "פתיתים",
-      "quantity": 500,
-      "unit": "גרם",
-      "expires": null
-    },
-    {
-      "name": "קוסקוס",
-      "quantity": 500,
-      "unit": "גרם",
-      "expires": null
-    },
-    {
-      "name": "מיץ לימון",
-      "quantity": 250,
-      "unit": "מ\"ל",
       "expires": null
     },
     {
@@ -122,46 +74,22 @@
       "expires": null
     },
     {
-      "name": "קמח מלא",
-      "quantity": 5,
-      "unit": "יחידה",
-      "expires": "2027-12-17"
-    },
-    {
-      "name": "אורז",
-      "quantity": 575,
+      "name": "חזה עוף",
+      "quantity": 300,
       "unit": "גרם",
       "expires": null
     },
     {
-      "name": "אפונה יבשה",
-      "quantity": 200,
-      "unit": "גרם",
-      "expires": null
+      "name": "חלב",
+      "quantity": 1004,
+      "unit": "מ\"ל",
+      "expires": "2026-11-08"
     },
     {
-      "name": "פטרוזיליה",
-      "quantity": 1,
-      "unit": "צרור",
-      "expires": null
-    },
-    {
-      "name": "תפוחי אדמה",
-      "quantity": 10,
+      "name": "חצילים",
+      "quantity": 2,
       "unit": "יחידה",
-      "expires": null
-    },
-    {
-      "name": "עדשים",
-      "quantity": 125,
-      "unit": "גרם",
-      "expires": null
-    },
-    {
-      "name": "שיני שום",
-      "quantity": 4,
-      "unit": "יחידה",
-      "expires": null
+      "expires": "2026-11-10"
     },
     {
       "name": "כרוב",
@@ -176,10 +104,46 @@
       "expires": null
     },
     {
-      "name": "חזה עוף",
-      "quantity": 300,
+      "name": "מיץ לימון",
+      "quantity": 250,
+      "unit": "מ\"ל",
+      "expires": null
+    },
+    {
+      "name": "מלפפונים",
+      "quantity": 13,
+      "unit": "יחידה",
+      "expires": "2026-11-09"
+    },
+    {
+      "name": "עגבניות",
+      "quantity": 5,
+      "unit": "יחידה",
+      "expires": "2026-11-09"
+    },
+    {
+      "name": "עדשים",
+      "quantity": 125,
       "unit": "גרם",
       "expires": null
+    },
+    {
+      "name": "פטרוזיליה",
+      "quantity": 1,
+      "unit": "צרור",
+      "expires": null
+    },
+    {
+      "name": "פטריות",
+      "quantity": 250,
+      "unit": "גרם",
+      "expires": "2026-11-08"
+    },
+    {
+      "name": "פילה דג",
+      "quantity": 600,
+      "unit": "גרם",
+      "expires": "2027-01-20"
     },
     {
       "name": "פירורי לחם",
@@ -191,6 +155,42 @@
       "name": "פרגיות",
       "quantity": 300,
       "unit": "גרם",
+      "expires": null
+    },
+    {
+      "name": "פתיתים",
+      "quantity": 500,
+      "unit": "גרם",
+      "expires": null
+    },
+    {
+      "name": "קוטג'",
+      "quantity": 250,
+      "unit": "גרם",
+      "expires": "2026-11-11"
+    },
+    {
+      "name": "קוסקוס",
+      "quantity": 500,
+      "unit": "גרם",
+      "expires": null
+    },
+    {
+      "name": "קמח מלא",
+      "quantity": 5,
+      "unit": "יחידה",
+      "expires": "2027-12-17"
+    },
+    {
+      "name": "שיני שום",
+      "quantity": 4,
+      "unit": "יחידה",
+      "expires": null
+    },
+    {
+      "name": "תפוחי אדמה",
+      "quantity": 10,
+      "unit": "יחידה",
       "expires": null
     }
   ]

@@ -99,24 +99,45 @@ def add_to_pantry(additions, units, today, path=None, used=None):
 
 # ---------- During the week ----------
 
-def record_shopping(planner, names=None, path=None):
+def record_shopping(planner, names=None, path=None, amounts=None):
     """Mark items of the shopping list as bought (names=None: the whole list).
 
     They go into the pantry and into the reservation of the meals they were
     bought for, so the free amounts at home don't change. Returns what was bought.
-    The caller saves the plan.
+
+    amounts: {name: how much was really bought}, when it isn't what the list said.
+    Less: the meals soonest in the week get it first, and the rest stays on the
+    list. More: the extra goes into the pantry as free stock. The caller saves the plan.
     """
     used = reserved_in_plan(planner.plan)  # before the bought items join the reservations
+    amounts = dict(amounts or {})
+    wanted = set(amounts) | set(names or [])
     bought = Counter()
-    for meals in planner.plan.values():
-        for entry in meals.values():
+    for day in planner.prefs["plan_days"]:  # in the week's order, so the sooner meals come first
+        for meal in planner.prefs["meals"]:
+            entry = planner.plan.get(day, {}).get(meal)
+            if entry is None:
+                continue
             for name in list(entry["to_buy"]):
-                if names is None or name in names:
-                    qty = entry["to_buy"].pop(name)
-                    entry["reserved"][name] = entry["reserved"].get(name, 0) + qty
-                    bought[name] += qty
+                if names is not None or amounts:
+                    if name not in wanted:
+                        continue
+                qty = entry["to_buy"][name]
+                if name in amounts:
+                    qty = min(qty, amounts[name])
+                    amounts[name] -= qty
+                if qty <= 0:
+                    continue
+                entry["to_buy"][name] -= qty
+                if entry["to_buy"][name] <= 0:
+                    del entry["to_buy"][name]
+                entry["reserved"][name] = entry["reserved"].get(name, 0) + qty
+                bought[name] += qty
+    for name, extra in amounts.items():  # bought more than the meals need: free at home
+        if extra > 0:
+            bought[name] += extra
     if bought:
-        add_to_pantry([{"name": n, "quantity": q} for n, q in bought.items()],
+        add_to_pantry([{"name": n, "quantity": q, "unit": planner.units.get(n)} for n, q in bought.items()],
                       planner.units, planner.today, path, used)
     return bought
 

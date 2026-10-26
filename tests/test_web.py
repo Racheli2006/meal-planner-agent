@@ -146,6 +146,21 @@ class DuringTheWeekTests(WebTestCase):
         names = {i["name"] for i in household.read_pantry()}
         self.assertTrue({s["name"] for s in shopping} <= names)
 
+    def test_bought_a_different_amount(self):
+        item = max(web.state()["shopping"], key=lambda s: s["quantity"])  # e.g. meat in grams
+        self.assertGreater(item["quantity"], 1)
+        half = item["quantity"] // 2
+        answer = web.do_bought({"items": [{"name": item["name"], "quantity": half}]})
+        self.assertIn("עוד צריך לקנות", answer["message"])
+        left = {s["name"]: s["quantity"] for s in web.state()["shopping"]}
+        self.assertEqual(left[item["name"]], item["quantity"] - half)
+        answer = web.do_bought({"items": [{"name": item["name"], "quantity": item["quantity"] * 3}]})
+        self.assertIn("נשארים פנויים במלאי", answer["message"])
+        self.assertNotIn(item["name"], {s["name"] for s in web.state()["shopping"]})
+        for bad in (0, -1, "2", True):
+            with self.subTest(quantity=bad), self.assertRaises(tools.DataError):
+                web.do_bought({"items": [{"name": item["name"], "quantity": bad}]})
+
     def test_bad_pantry_is_refused_and_kept(self):
         before = household.read_pantry()
         with self.assertRaises(tools.DataError):

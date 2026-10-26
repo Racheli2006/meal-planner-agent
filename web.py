@@ -432,12 +432,33 @@ def do_skip(body):
 
 
 def do_bought(body):
-    """Items on the shopping list were bought: they move into the pantry."""
+    """Items on the shopping list were bought: they move into the pantry. Each can come
+    with the amount really bought ("only one bag of flour"): the rest stays on the list."""
     names = body.get("names")  # None: the whole list
+    amounts = {}
+    for item in body.get("items") or []:  # [{"name", "quantity"}]: what was ticked, and how much
+        qty = item.get("quantity") if isinstance(item, dict) else None
+        if isinstance(qty, bool) or not isinstance(qty, (int, float)) or qty <= 0:
+            raise tools.DataError(f"כמות לא תקינה ל\"{item.get('name') if isinstance(item, dict) else item}\". "
+                                  f"צריך מספר גדול מ-0.")
+        amounts[str(item["name"])] = int(qty) if float(qty).is_integer() else qty
     planner = main.load_saved_planner(today())
-    bought = household.record_shopping(planner, set(names) if names is not None else None)
+    needed = {i["name"]: i["quantity"] for i in planner.shopping_list()}
+    bought = household.record_shopping(planner, set(names) if names is not None else None, amounts=amounts)
     main.save_outputs(planner)
-    return {"message": f"נוספו למלאי {len(bought)} מוצרים." if bought else "לא סומן שום מוצר."}
+    if not bought:
+        return {"message": "לא סומן שום מוצר."}
+    left = {i["name"]: i for i in planner.shopping_list()}
+    lines = []
+    for name, qty in bought.items():
+        unit = planner.units.get(name, "")
+        line = f"{name}: {main.amount(qty, unit)}"
+        if name in left:
+            line += f" (עוד צריך לקנות {main.amount(left[name]['quantity'], unit)})"
+        elif qty > needed.get(name, 0):
+            line += f" (יותר ממה שהתפריט צריך: {main.amount(qty - needed.get(name, 0), unit)} נשארים פנויים במלאי)"
+        lines.append(line)
+    return {"message": "נוסף למלאי:\n" + "\n".join(lines)}
 
 
 def units():
