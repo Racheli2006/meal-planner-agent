@@ -162,6 +162,28 @@ class AgentLoopTests(unittest.TestCase):
         self.assertIn("recipes", tool_results(client)[2])  # a real answer, since the plan changed
 
 
+class ReasonTests(unittest.TestCase):
+    def test_the_reason_is_shown_under_the_step(self):
+        log = []
+        p = make_planner(max_missing_per_dish=2)
+        agent.run_agent(p, "goal", log=log.append, client=FakeClient([
+            reply(calls=[tool_call("add_meal_to_plan", {"day": "ראשון", "meal": "lunch", "main_id": 1, "side_id": 10,
+                                                        "reason": "יש בבית אורז, וצריך לקנות רק בשר"})]),
+            reply("סיימתי")]))
+        self.assertIn("למה: יש בבית אורז, וצריך לקנות רק בשר", log[0])
+        self.assertNotIn("reason=", log[0])  # not repeated among the arguments
+
+    def test_reason_is_required_where_the_plan_changes(self):
+        from prompts import tool_schemas
+        required = {t["function"]["name"]: t["function"]["parameters"]["required"] for t in tool_schemas(p_prefs())}
+        for name in ("add_meal_to_plan", "remove_meal", "change_side", "change_people"):
+            self.assertIn("reason", required[name])
+
+
+def p_prefs():
+    return make_planner().prefs
+
+
 class SummaryTests(unittest.TestCase):
     def test_summary_is_rewritten_from_the_final_plan(self):
         # The plan is complete, but the first summary says a day couldn't be planned.

@@ -297,8 +297,11 @@ def _run_tool(planner, allowed, name, raw_args):
 
 
 def _describe(name, args, result):
-    """One short log line per step, so you can follow the agent's decisions."""
-    shown = ", ".join(f"{k}={v}" for k, v in args.items()) if isinstance(args, dict) else ""
+    """One short log line per step, so you can follow the agent's decisions. When the AI
+    gave a reason for a change, it's shown under it: the "why" of the decision."""
+    args = args if isinstance(args, dict) else {}
+    reason = str(args.get("reason") or "").strip()
+    shown = ", ".join(f"{k}={v}" for k, v in args.items() if k != "reason")
     if "note" in result:
         outcome = "(repeat, nothing new)"
     elif "error" in result:
@@ -323,7 +326,8 @@ def _describe(name, args, result):
         outcome = f"{len(result['planned'])} planned, {len(result['empty_slots'])} empty"
     else:
         outcome = "ok"
-    return f"{name}({shown}) -> {outcome}"
+    why = f"\n      למה: {reason}" if reason and "error" not in result and "note" not in result else ""
+    return f"{name}({shown}) -> {outcome}{why}"
 
 
 def _summary_from_facts(client, messages, planner):

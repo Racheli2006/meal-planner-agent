@@ -27,7 +27,12 @@ Filling a slot:
    Each option is a main (to_buy = items it needs bought) with the sides that fit
    it, as [side_id, items_to_buy] pairs; side_names maps side ids to names.
 2. Choose the best option for the week as a whole (see below), then call
-   add_meal_to_plan with the main_id and one side id from that option.
+   add_meal_to_plan with the main_id and one side id from that option, and a
+   short reason in Hebrew: why this one over the others. Base it on a concrete
+   fact from the options you got: an item that expires soon, how many items it
+   needs bought compared to the others, what it avoids repeating from the days
+   before. Each reason should be specific to its meal: never a general phrase
+   like "יש מגוון", and don't claim a wish applies unless the tool said so.
 3. Options change as the plan fills up, so call find_meal_options again for each slot.
 You may fill the slots in any order.
 
@@ -36,6 +41,7 @@ How you choose (this is your job; the rules are already handled):
 2. Prefer options that need fewer items bought.
 3. Balance the week: mix meat, dairy and parve meals. Don't make every meal meat:
    there are only a few meat dishes, and a meat lunch rules out a dairy dinner that day.
+   Prefer at most one meat meal a day when other options fit.
 4. Variety: don't put similar dishes on consecutive days (e.g. pasta twice in a row),
    and spread the side dishes around.
 5. Think ahead: don't use up dishes that the remaining slots will need.
@@ -253,6 +259,9 @@ def tool_schemas(prefs):
     people = {"type": "integer", "minimum": 1,
               "description": f"Number of people eating. Leave out for the household default ({prefs['people']})."}
     recipe_id = {"type": "integer", "description": "A recipe id from search_recipes"}
+    reason = {"type": "string",
+              "description": "In Hebrew, one short sentence: why THIS choice over the other options "
+                             "(e.g. 'הפטריות פגות בעוד יומיים, וצריך לקנות רק דבר אחד')."}
     user_asked = {"type": "boolean",
                   "description": "Mid-week only: true when the user named this dish themselves. Lifts the variety "
                                  "and shopping limits (their choice); kosher, allergies and wishes still apply."}
@@ -307,17 +316,17 @@ def tool_schemas(prefs):
         tool("add_meal_to_plan",
              "Put a meal into an empty slot. All rules are checked; on failure you get an error and a hint.",
              {"day": day, "meal": meal, "main_id": recipe_id, "side_id": recipe_id, "people": people,
-              "user_asked": user_asked},
-             ["day", "meal", "main_id", "side_id"]),
+              "user_asked": user_asked, "reason": reason},
+             ["day", "meal", "main_id", "side_id", "reason"]),
         tool("change_side",
              "Mid-week: keep a planned meal's main dish and put a different side dish (e.g. the user asks for "
              "mashed potatoes). If it doesn't fit, the meal stays as it was and you get an error.",
-             {"day": day, "meal": meal, "side_id": recipe_id, "user_asked": user_asked},
-             ["day", "meal", "side_id"]),
+             {"day": day, "meal": meal, "side_id": recipe_id, "user_asked": user_asked, "reason": reason},
+             ["day", "meal", "side_id", "reason"]),
         tool("remove_meal",
              "Take a meal out of the plan and return its ingredients to the pantry.",
-             {"day": day, "meal": meal},
-             ["day", "meal"]),
+             {"day": day, "meal": meal, "reason": reason},
+             ["day", "meal", "reason"]),
         tool("find_in_plan",
              "Which planned meals contain an ingredient (part of a name is enough, e.g. 'אפונה'). "
              "Use it to check whether a request about an ingredient needs any change.",
@@ -338,6 +347,6 @@ def tool_schemas(prefs):
         tool("change_people",
              "Keep a planned meal's dishes but cook them for a different number of people (e.g. guests). "
              "If the same dishes no longer fit, the meal is left unchanged and you get an error.",
-             {"day": day, "meal": meal, "people": people},
-             ["day", "meal", "people"]),
+             {"day": day, "meal": meal, "people": people, "reason": reason},
+             ["day", "meal", "people", "reason"]),
     ]

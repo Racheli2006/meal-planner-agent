@@ -817,8 +817,10 @@ class MealPlanner:
         return result
 
     # ----- Tool: add_meal_to_plan -----
+    # The tools that change the plan take `reason`: the AI's "why" for the choice, in
+    # Hebrew. The plan doesn't use it; it's shown in the run's log, so the decisions can be read.
 
-    def add_meal_to_plan(self, day, meal, main_id, side_id=None, people=None, user_asked=False):
+    def add_meal_to_plan(self, day, meal, main_id, side_id=None, people=None, user_asked=False, reason=None):
         """Put a meal in the plan. Every rule is checked again here, so a bad choice
         by the AI is rejected with a reason instead of slipping into the plan.
 
@@ -923,7 +925,7 @@ class MealPlanner:
 
     # ----- Tool: change_side -----
 
-    def change_side(self, day, meal, side_id, user_asked=False):
+    def change_side(self, day, meal, side_id, user_asked=False, reason=None):
         """Keep the main dish and its people; put a different side (e.g. "add mashed
         potatoes on Thursday"). If the new side doesn't fit, the meal stays as it was."""
         error = self._slot_error(day, meal) or self._locked_error(day, meal)
@@ -947,7 +949,7 @@ class MealPlanner:
 
     # ----- Tool: remove_meal -----
 
-    def remove_meal(self, day, meal):
+    def remove_meal(self, day, meal, reason=None):
         """Take a meal out of the plan and give its ingredients back."""
         error = self._slot_error(day, meal)
         if error:
@@ -972,7 +974,7 @@ class MealPlanner:
 
     # ----- Tool: change_people -----
 
-    def change_people(self, day, meal, people):
+    def change_people(self, day, meal, people, reason=None):
         """Same dishes, different number of people (e.g. guests are coming).
 
         If the same dishes don't fit any more (say, too much to buy), the meal is
